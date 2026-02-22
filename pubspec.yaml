@@ -47,6 +47,7 @@ dependencies:
   firebase_app_check: ^0.3.2+9
   http: ^1.2.0
   flutter_map: ^7.0.0
+  flutter_map_marker_cluster: ^1.4.0  # Marker clustering for better map performance
   latlong2: ^0.9.0
   geolocator: ^11.0.0
   geocoding: ^3.0.0

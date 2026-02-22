@@ -5,6 +5,8 @@ import '../core/services/ola_maps_service.dart';
 import '../core/theme/app_colors.dart';
 
 class OlaMapsDebugScreen extends StatefulWidget {
+  const OlaMapsDebugScreen({super.key});
+
   @override
   _OlaMapsDebugScreenState createState() => _OlaMapsDebugScreenState();
 }

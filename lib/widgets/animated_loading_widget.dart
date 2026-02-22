@@ -8,12 +8,12 @@ class AnimatedLoadingWidget extends StatefulWidget {
   final Duration? animationDuration;
 
   const AnimatedLoadingWidget({
-    Key? key,
+    super.key,
     required this.message,
     this.icon = Icons.directions_bike,
     this.primaryColor,
     this.animationDuration,
-  }) : super(key: key);
+  });
 
   @override
   State<AnimatedLoadingWidget> createState() => _AnimatedLoadingWidgetState();

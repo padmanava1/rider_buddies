@@ -56,6 +56,8 @@ class RideBuddiesApp extends StatelessWidget {
 }
 
 class AuthWrapper extends StatefulWidget {
+  const AuthWrapper({super.key});
+
   @override
   _AuthWrapperState createState() => _AuthWrapperState();
 }

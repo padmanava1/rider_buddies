@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
@@ -39,7 +40,8 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
   String? _error;
   bool _hasLocationPermission = false;
   bool _isSharingLocation = false;
-  List<Marker> _markers = [];
+  List<Marker> _memberMarkers = [];  // For clustering (group members)
+  List<Marker> _tripPointMarkers = []; // No clustering (start/end/break points)
   LiveGroupTracking? _trackingService;
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -472,9 +474,11 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
   }
 
   void _buildMarkers() {
-    _markers.clear();
+    // Clear both marker lists
+    _memberMarkers.clear();
+    _tripPointMarkers.clear();
+
     final tripProvider = Provider.of<TripProvider>(context, listen: false);
-    final isLeader = tripProvider.isLeader;
     final currentUser = Provider.of<AuthProvider>(context, listen: false).user;
     final currentUserId = currentUser?.uid;
 
@@ -482,23 +486,23 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
     Set<String> usersWithMarkers = {};
     bool isCurrentUserInMembers = false;
 
-    // Add member markers with enhanced identification
+    // Add member markers (these will be clustered)
     for (final member in _trackingService?.memberLocations ?? []) {
       final isCurrentUser = member.userId == currentUserId;
       if (isCurrentUser) isCurrentUserInMembers = true;
 
-      // Use enhanced member marker for all users
-      _markers.add(
+      // Use enhanced member marker for all users - goes to clustered list
+      _memberMarkers.add(
         MapMarkers.buildMemberMarker(member, isCurrentUser: isCurrentUser),
       );
       usersWithMarkers.add(member.userId);
     }
 
-    // Add trip point markers if available
+    // Add trip point markers if available (these will NOT be clustered)
     if (tripProvider.hasActiveTrip) {
       // Start point
       if (tripProvider.startPoint != null) {
-        _markers.add(
+        _tripPointMarkers.add(
           MapMarkers.buildStartMarker(
             tripProvider.startPoint!.coordinates,
             tripProvider.startPoint!.name,
@@ -508,7 +512,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
 
       // End point
       if (tripProvider.endPoint != null) {
-        _markers.add(
+        _tripPointMarkers.add(
           MapMarkers.buildEndMarker(
             tripProvider.endPoint!.coordinates,
             tripProvider.endPoint!.name,
@@ -518,7 +522,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
 
       // Break points
       for (final breakPoint in tripProvider.breakPoints) {
-        _markers.add(
+        _tripPointMarkers.add(
           MapMarkers.buildBreakMarker(breakPoint.coordinates, breakPoint.name),
         );
       }
@@ -528,9 +532,10 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
     // 1. We have current location
     // 2. User is NOT sharing location
     // 3. User is NOT already represented by a member marker
+    // Add to trip points (non-clustered) since it's just one marker
     if (_currentLocation != null &&
         (!_isSharingLocation && !isCurrentUserInMembers)) {
-      _markers.add(
+      _tripPointMarkers.add(
         MapMarkers.buildCurrentUserMarker(
           _currentLocation!,
           heading: _currentHeading,
@@ -1294,7 +1299,46 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                                     userAgentPackageName:
                                         'com.example.rider_buddies', // Rider Buddies app
                                   ),
-                                  MarkerLayer(markers: _markers),
+                                  // Clustered layer for group members (5+ members nearby will cluster)
+                                  MarkerClusterLayerWidget(
+                                    options: MarkerClusterLayerOptions(
+                                      maxClusterRadius: 80, // Cluster markers within 80 pixels
+                                      size: const Size(45, 45),
+                                      markers: _memberMarkers,
+                                      builder: (context, markers) {
+                                        // Cluster marker showing count
+                                        return Container(
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: Colors.white,
+                                              width: 2,
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black.withOpacity(0.3),
+                                                blurRadius: 6,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              markers.length.toString(),
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  // Non-clustered layer for trip points (start/end/break)
+                                  MarkerLayer(markers: _tripPointMarkers),
                                   // Single polyline layer with all routes
                                   PolylineLayer(
                                     polylines: _buildAllPolylines(),

@@ -4,6 +4,16 @@ import 'package:latlong2/latlong.dart';
 import 'package:flutter/services.dart';
 import 'location_permission_manager.dart';
 
+/// Accuracy mode for location requests - optimizes battery usage
+enum LocationAccuracyMode {
+  /// High accuracy for active tracking (uses more battery)
+  high,
+  /// Balanced accuracy for normal use
+  balanced,
+  /// Low accuracy for background/idle (saves battery)
+  low,
+}
+
 class LocationService extends ChangeNotifier {
   LatLng? _currentLocation;
   bool _isLoading = false;
@@ -38,8 +48,24 @@ class LocationService extends ChangeNotifier {
     }
   }
 
-  // Get current location
-  Future<LatLng?> getCurrentLocation() async {
+  /// Convert accuracy mode to Geolocator accuracy
+  LocationAccuracy _getGeolocatorAccuracy(LocationAccuracyMode mode) {
+    switch (mode) {
+      case LocationAccuracyMode.high:
+        return LocationAccuracy.high;
+      case LocationAccuracyMode.balanced:
+        return LocationAccuracy.medium;
+      case LocationAccuracyMode.low:
+        return LocationAccuracy.low;
+    }
+  }
+
+  /// Get current location with configurable accuracy
+  /// Use [LocationAccuracyMode.balanced] for normal operations to save battery
+  /// Use [LocationAccuracyMode.high] only during active ride tracking
+  Future<LatLng?> getCurrentLocation({
+    LocationAccuracyMode accuracyMode = LocationAccuracyMode.balanced,
+  }) async {
     try {
       if (!_hasPermission) {
         _error = 'Location permission not granted';
@@ -51,9 +77,12 @@ class LocationService extends ChangeNotifier {
       _error = null;
       notifyListeners();
 
+      final accuracy = _getGeolocatorAccuracy(accuracyMode);
+      debugPrint('Getting location with accuracy: $accuracyMode');
+
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 10),
+        desiredAccuracy: accuracy,
+        timeLimit: Duration(seconds: accuracyMode == LocationAccuracyMode.high ? 15 : 10),
       );
 
       _currentLocation = LatLng(position.latitude, position.longitude);
