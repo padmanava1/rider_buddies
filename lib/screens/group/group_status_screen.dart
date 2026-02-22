@@ -447,62 +447,235 @@ class _GroupStatusScreenState extends State<GroupStatusScreen>
                     ),
                     SizedBox(height: 16),
 
-                    // Trip Planning Button (for leader)
+                    // Trip Planning Button and Start Journey Button (for leader)
                     if (isLeader)
                       Consumer<TripProvider>(
                         builder: (context, tripProvider, child) {
-                          return ElevatedButton.icon(
-                            onPressed: () {
-                              HapticService.mediumImpact();
-                              Navigator.push(
-                                context,
-                                PageRouteBuilder(
-                                  pageBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                      ) => TripPlanningScreen(
-                                        groupCode: widget.groupCode,
+                          // Load trip data if not loaded
+                          if (!tripProvider.hasActiveTrip && !tripProvider.isLoading) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              tripProvider.loadTripData(widget.groupCode);
+                            });
+                          }
+
+                          final canStartTrip = tripProvider.startPoint != null &&
+                              tripProvider.endPoint != null &&
+                              tripProvider.selectedRoute != null &&
+                              tripProvider.tripData?['status'] == 'planning';
+
+                          final tripStatus = tripProvider.tripData?['status'];
+                          final isTripActive = tripStatus == 'active';
+
+                          return Column(
+                            children: [
+                              // Plan Trip / Edit Trip Button
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  HapticService.mediumImpact();
+                                  Navigator.push(
+                                    context,
+                                    PageRouteBuilder(
+                                      pageBuilder:
+                                          (
+                                            context,
+                                            animation,
+                                            secondaryAnimation,
+                                          ) => TripPlanningScreen(
+                                            groupCode: widget.groupCode,
+                                          ),
+                                      transitionsBuilder:
+                                          (
+                                            context,
+                                            animation,
+                                            secondaryAnimation,
+                                            child,
+                                          ) {
+                                            return SlideTransition(
+                                              position:
+                                                  Tween<Offset>(
+                                                    begin: Offset(1.0, 0.0),
+                                                    end: Offset.zero,
+                                                  ).animate(
+                                                    CurvedAnimation(
+                                                      parent: animation,
+                                                      curve: Curves.easeInOut,
+                                                    ),
+                                                  ),
+                                              child: child,
+                                            );
+                                          },
+                                      transitionDuration: Duration(
+                                        milliseconds: 300,
                                       ),
-                                  transitionsBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                        child,
-                                      ) {
-                                        return SlideTransition(
-                                          position:
-                                              Tween<Offset>(
-                                                begin: Offset(1.0, 0.0),
-                                                end: Offset.zero,
-                                              ).animate(
-                                                CurvedAnimation(
-                                                  parent: animation,
-                                                  curve: Curves.easeInOut,
-                                                ),
+                                    ),
+                                  );
+                                },
+                                icon: Icon(tripProvider.hasActiveTrip ? Icons.edit : Icons.route),
+                                label: Text(tripProvider.hasActiveTrip ? 'Edit Trip' : 'Plan Trip'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(vertical: 16),
+                                  backgroundColor: isTripActive ? Colors.grey : AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  elevation: 2,
+                                ),
+                              ),
+                              // Start Journey Button - shows when trip is ready
+                              if (canStartTrip) ...[
+                                SizedBox(height: 12),
+                                ElevatedButton.icon(
+                                  onPressed: () async {
+                                    HapticService.mediumImpact();
+                                    final confirmed = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: Text('Start Journey'),
+                                        content: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('Ready to start your trip?'),
+                                            SizedBox(height: 12),
+                                            Text(
+                                              'From: ${tripProvider.startPoint!.name}',
+                                              style: TextStyle(color: Colors.grey[600]),
+                                            ),
+                                            Text(
+                                              'To: ${tripProvider.endPoint!.name}',
+                                              style: TextStyle(color: Colors.grey[600]),
+                                            ),
+                                            SizedBox(height: 8),
+                                            Text(
+                                              'Distance: ${(tripProvider.selectedRoute!.distance / 1000).toStringAsFixed(1)} km',
+                                              style: TextStyle(color: Colors.grey[600]),
+                                            ),
+                                            Text(
+                                              'Duration: ${(tripProvider.selectedRoute!.duration / 60).round()} min',
+                                              style: TextStyle(color: Colors.grey[600]),
+                                            ),
+                                            SizedBox(height: 12),
+                                            Text(
+                                              'All group members will be notified.',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w500,
+                                                color: AppColors.primary,
                                               ),
-                                          child: child,
+                                            ),
+                                          ],
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context, false),
+                                            child: Text('Cancel'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () => Navigator.pop(context, true),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.green,
+                                            ),
+                                            child: Text('Start Journey'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+
+                                    if (confirmed == true) {
+                                      final success = await tripProvider.startTrip(widget.groupCode);
+                                      if (success) {
+                                        HapticService.success();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Journey started! Opening live map...'),
+                                            backgroundColor: Colors.green,
+                                            behavior: SnackBarBehavior.floating,
+                                          ),
                                         );
-                                      },
-                                  transitionDuration: Duration(
-                                    milliseconds: 300,
+                                        // Navigate to live map
+                                        Navigator.push(
+                                          context,
+                                          PageRouteBuilder(
+                                            pageBuilder:
+                                                (context, animation, secondaryAnimation) =>
+                                                    LiveGroupMapScreen(
+                                                      groupCode: widget.groupCode,
+                                                    ),
+                                            transitionsBuilder:
+                                                (
+                                                  context,
+                                                  animation,
+                                                  secondaryAnimation,
+                                                  child,
+                                                ) {
+                                                  return SlideTransition(
+                                                    position:
+                                                        Tween<Offset>(
+                                                          begin: Offset(1.0, 0.0),
+                                                          end: Offset.zero,
+                                                        ).animate(
+                                                          CurvedAnimation(
+                                                            parent: animation,
+                                                            curve: Curves.easeInOut,
+                                                          ),
+                                                        ),
+                                                    child: child,
+                                                  );
+                                                },
+                                            transitionDuration: Duration(milliseconds: 300),
+                                          ),
+                                        );
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(tripProvider.error ?? 'Failed to start journey'),
+                                            backgroundColor: Colors.red,
+                                            behavior: SnackBarBehavior.floating,
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                  icon: Icon(Icons.play_arrow),
+                                  label: Text('Start Journey'),
+                                  style: ElevatedButton.styleFrom(
+                                    padding: EdgeInsets.symmetric(vertical: 16),
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    elevation: 2,
                                   ),
                                 ),
-                              );
-                            },
-                            icon: Icon(Icons.route),
-                            label: Text('Plan Trip'),
-                            style: ElevatedButton.styleFrom(
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              elevation: 2,
-                            ),
+                              ],
+                              // Trip Active indicator
+                              if (isTripActive) ...[
+                                SizedBox(height: 12),
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.directions_bike, color: Colors.green),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Journey in Progress',
+                                        style: TextStyle(
+                                          color: Colors.green,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
                           );
                         },
                       ),

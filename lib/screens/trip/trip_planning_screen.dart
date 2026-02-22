@@ -11,6 +11,7 @@ import 'route_display_screen.dart';
 import '../../core/services/ola_maps_service.dart';
 import '../../core/services/location_permission_manager.dart';
 import '../../core/services/routing_service.dart';
+import '../map/live_group_map_screen.dart';
 
 class TripPlanningScreen extends StatefulWidget {
   final String groupCode;
@@ -252,11 +253,119 @@ class _TripPlanningScreenState extends State<TripPlanningScreen> {
                         ),
                       ),
                     ),
+
+                  // Start Trip Button - appears when start and end are selected
+                  if (tripProvider.startPoint != null &&
+                      tripProvider.endPoint != null) ...[
+                    SizedBox(height: 24),
+                    _buildStartTripButton(tripProvider),
+                  ],
                 ],
               ),
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildStartTripButton(TripProvider tripProvider) {
+    final theme = Theme.of(context);
+    final hasRoute = tripProvider.selectedRoute != null;
+    final tripStatus = tripProvider.tripData?['status'];
+    final isTripActive = tripStatus == 'active';
+
+    if (isTripActive) {
+      // Trip is already active
+      return Container(
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.green.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.green.withOpacity(0.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.directions_bike, color: Colors.green, size: 28),
+            SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Trip in Progress',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  'Open live map to track',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.green.shade700,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.green.shade600, Colors.green.shade400],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.green.withOpacity(0.3),
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _startTrip(tripProvider),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.play_circle_fill, color: Colors.white, size: 32),
+                SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Start Trip',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      hasRoute
+                          ? '${(tripProvider.selectedRoute!.distance / 1000).toStringAsFixed(1)} km • ${(tripProvider.selectedRoute!.duration / 60).round()} min'
+                          : 'Direct route will be used',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withOpacity(0.9),
+                      ),
+                    ),
+                  ],
+                ),
+                Spacer(),
+                Icon(Icons.arrow_forward, color: Colors.white),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -481,32 +590,210 @@ class _TripPlanningScreenState extends State<TripPlanningScreen> {
   Future<void> _startTrip(TripProvider tripProvider) async {
     HapticService.mediumImpact();
 
+    // If no route selected, auto-generate one
+    if (tripProvider.selectedRoute == null) {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Generating route...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Generate route with breakpoints
+      final routes = await RoutingService.getComprehensiveRoutes(
+        tripProvider.startPoint!.coordinates,
+        tripProvider.endPoint!.coordinates,
+        breakPoints: tripProvider.breakPoints.map((bp) => bp.coordinates).toList(),
+      );
+
+      Navigator.pop(context); // Close loading dialog
+
+      if (routes.isNotEmpty) {
+        final bestRoute = routes.first;
+        final tripRoute = TripRoute(
+          id: 'auto_route_${DateTime.now().millisecondsSinceEpoch}',
+          name: bestRoute.name,
+          waypoints: [tripProvider.startPoint!.coordinates, tripProvider.endPoint!.coordinates],
+          distance: bestRoute.route.totalDistance,
+          duration: bestRoute.route.totalDuration,
+          polyline: bestRoute.route.fullPolyline.map((p) => '${p.latitude},${p.longitude}').join('|'),
+        );
+        await tripProvider.setSelectedRoute(widget.groupCode, tripRoute);
+      }
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Start Trip'),
-        content: Text(
-          'Are you sure you want to start the trip? This will notify all group members.',
+        title: Row(
+          children: [
+            Icon(Icons.play_circle_fill, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Start Trip'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Ready to begin your journey?'),
+            SizedBox(height: 16),
+            _buildTripSummaryRow(Icons.trip_origin, 'From', tripProvider.startPoint!.name, AppColors.primary),
+            SizedBox(height: 8),
+            _buildTripSummaryRow(Icons.flag, 'To', tripProvider.endPoint!.name, Colors.red),
+            if (tripProvider.breakPoints.isNotEmpty) ...[
+              SizedBox(height: 8),
+              _buildTripSummaryRow(Icons.coffee, 'Stops', '${tripProvider.breakPoints.length} break point(s)', Colors.orange),
+            ],
+            if (tripProvider.selectedRoute != null) ...[
+              SizedBox(height: 12),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Column(
+                      children: [
+                        Icon(Icons.route, color: Colors.grey),
+                        SizedBox(height: 4),
+                        Text(
+                          '${(tripProvider.selectedRoute!.distance / 1000).toStringAsFixed(1)} km',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      children: [
+                        Icon(Icons.access_time, color: Colors.grey),
+                        SizedBox(height: 4),
+                        Text(
+                          '${(tripProvider.selectedRoute!.duration / 60).round()} min',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            SizedBox(height: 12),
+            Text(
+              'All group members will be notified.',
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            ),
+          ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text('Cancel'),
           ),
-          TextButton(
+          ElevatedButton.icon(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('Start Trip'),
+            icon: Icon(Icons.play_arrow),
+            label: Text('Start Now'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),
     );
 
     if (confirmed == true) {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Starting trip...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
       final success = await tripProvider.startTrip(widget.groupCode);
+      Navigator.pop(context); // Close loading dialog
+
       if (success) {
-        Navigator.pop(context);
+        HapticService.success();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Trip started! Opening live map...'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+
+        // Navigate to live map
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => LiveGroupMapScreen(groupCode: widget.groupCode),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(tripProvider.error ?? 'Failed to start trip'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     }
+  }
+
+  Widget _buildTripSummaryRow(IconData icon, String label, String value, Color color) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        SizedBox(width: 8),
+        Text('$label: ', style: TextStyle(color: Colors.grey[600])),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(fontWeight: FontWeight.w500),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
   }
 
   void _runFunctionalityTest() async {

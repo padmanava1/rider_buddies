@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:provider/provider.dart';
-import 'package:flutter/foundation.dart';
 import 'dart:math';
 import '../../providers/trip_provider.dart';
 import '../../core/services/haptic_service.dart';
@@ -26,7 +24,7 @@ class RouteSelectionScreen extends StatefulWidget {
 
 class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
   final MapController _mapController = MapController();
-  List<RouteResult> _routes = [];
+  List<RouteWithMetadata> _routes = [];
   int _selectedRouteIndex = 0;
   bool _isLoading = true;
   bool _isMapReady = false;
@@ -46,67 +44,46 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
       });
 
       debugPrint(
-        'Generating routes from ${widget.startPoint.coordinates} to ${widget.endPoint.coordinates}',
+        'Generating comprehensive routes from ${widget.startPoint.coordinates} to ${widget.endPoint.coordinates}',
       );
-      List<RouteResult> routes = [];
 
-      // Route 1: Direct route
-      debugPrint('Fetching direct route...');
-      final directRoute = await RoutingService.getRoute(
+      // Use the new comprehensive routing
+      final routes = await RoutingService.getComprehensiveRoutes(
         widget.startPoint.coordinates,
         widget.endPoint.coordinates,
-        profile: 'driving',
+        breakPoints: widget.breakPoints.map((bp) => bp.coordinates).toList(),
       );
-
-      if (directRoute != null) {
-        debugPrint(
-          'Direct route found: ${directRoute.totalDistance}m, ${directRoute.totalDuration}s',
-        );
-        routes.add(directRoute);
-      } else {
-        debugPrint('Direct route not found');
-      }
-
-      // Route 2: Alternative routes
-      debugPrint('Fetching alternative routes...');
-      final alternativeRoutes = await RoutingService.getAlternativeRoutes(
-        widget.startPoint.coordinates,
-        widget.endPoint.coordinates,
-        profile: 'driving',
-        alternatives: 2,
-      );
-
-      debugPrint('Found ${alternativeRoutes.length} alternative routes');
-      routes.addAll(alternativeRoutes);
-
-      // Route 3: Route with break points (if any)
-      if (widget.breakPoints.isNotEmpty) {
-        debugPrint('Fetching route with break points...');
-        List<LatLng> waypoints = [widget.startPoint.coordinates];
-        waypoints.addAll(widget.breakPoints.map((bp) => bp.coordinates));
-        waypoints.add(widget.endPoint.coordinates);
-
-        final scenicRoute = await RoutingService.getRouteWithWaypoints(
-          waypoints,
-          profile: 'driving',
-        );
-
-        if (scenicRoute != null) {
-          debugPrint(
-            'Scenic route found: ${scenicRoute.totalDistance}m, ${scenicRoute.totalDuration}s',
-          );
-          routes.add(scenicRoute);
-        } else {
-          debugPrint('Scenic route not found');
-        }
-      }
 
       debugPrint('Total routes found: ${routes.length}');
+
       if (routes.isEmpty) {
-        setState(() {
-          _error = 'No routes found. Please check your start and end points.';
-          _isLoading = false;
-        });
+        // Fallback to basic routing if comprehensive fails
+        debugPrint('Comprehensive routing returned no routes, trying basic...');
+        final basicRoute = await RoutingService.getRoute(
+          widget.startPoint.coordinates,
+          widget.endPoint.coordinates,
+        );
+
+        if (basicRoute != null) {
+          setState(() {
+            _routes = [
+              RouteWithMetadata(
+                route: basicRoute,
+                name: 'Direct Route',
+                description: 'Basic route to destination',
+                routeType: 'fastest',
+                source: 'OSRM',
+              )
+            ];
+            _selectedRouteIndex = 0;
+            _isLoading = false;
+          });
+        } else {
+          setState(() {
+            _error = 'No routes found. Please check your start and end points.';
+            _isLoading = false;
+          });
+        }
         return;
       }
 
@@ -133,10 +110,10 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
 
   void _centerMapOnRoute() {
     if (_routes.isNotEmpty &&
-        _routes[0].fullPolyline.isNotEmpty &&
+        _routes[0].route.fullPolyline.isNotEmpty &&
         _isMapReady) {
       try {
-        final polyline = _routes[0].fullPolyline;
+        final polyline = _routes[0].route.fullPolyline;
         final bounds = _calculateBounds(polyline);
         final center = LatLng(
           (bounds.southWest.latitude + bounds.northEast.latitude) / 2,
@@ -193,30 +170,50 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
 
   void _confirmRoute() {
     if (_routes.isNotEmpty) {
-      final selectedRoute = _routes[_selectedRouteIndex];
+      final selectedRouteData = _routes[_selectedRouteIndex];
 
-      // Create TripRoute from RouteResult
+      // Create TripRoute from RouteWithMetadata
       final tripRoute = TripRoute(
         id: 'route_${_selectedRouteIndex}',
-        name: _getRouteName(_selectedRouteIndex),
+        name: selectedRouteData.name,
         waypoints: [widget.startPoint.coordinates, widget.endPoint.coordinates],
-        distance: selectedRoute.totalDistance,
-        duration: selectedRoute.totalDuration,
-        polyline: _encodePolyline(selectedRoute.fullPolyline),
+        distance: selectedRouteData.route.totalDistance,
+        duration: selectedRouteData.route.totalDuration,
+        polyline: _encodePolyline(selectedRouteData.route.fullPolyline),
       );
 
       Navigator.pop(context, tripRoute);
     }
   }
 
-  String _getRouteName(int index) {
-    if (index == 0) return 'Fastest Route';
-    if (index == 1) return 'Alternative Route 1';
-    if (index == 2) return 'Alternative Route 2';
-    if (widget.breakPoints.isNotEmpty && index == _routes.length - 1) {
-      return 'Route with Break Points';
+  IconData _getRouteIcon(String routeType) {
+    switch (routeType) {
+      case 'fastest':
+        return Icons.speed;
+      case 'shortest':
+        return Icons.straighten;
+      case 'scenic':
+        return Icons.landscape;
+      case 'with_stops':
+        return Icons.local_cafe;
+      default:
+        return Icons.alt_route;
     }
-    return 'Route ${index + 1}';
+  }
+
+  Color _getRouteColor(String routeType) {
+    switch (routeType) {
+      case 'fastest':
+        return AppColors.primary;
+      case 'shortest':
+        return Colors.green;
+      case 'scenic':
+        return Colors.purple;
+      case 'with_stops':
+        return Colors.orange;
+      default:
+        return AppColors.secondary;
+    }
   }
 
   String _encodePolyline(List<LatLng> points) {
@@ -274,11 +271,11 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
                         polylines: [
                           for (int i = 0; i < _routes.length; i++)
                             Polyline(
-                              points: _routes[i].fullPolyline,
+                              points: _routes[i].route.fullPolyline,
                               color: i == _selectedRouteIndex
-                                  ? AppColors.primary
-                                  : AppColors.secondary.withOpacity(0.6),
-                              strokeWidth: i == _selectedRouteIndex ? 6 : 4,
+                                  ? _getRouteColor(_routes[i].routeType)
+                                  : _getRouteColor(_routes[i].routeType).withOpacity(0.4),
+                              strokeWidth: i == _selectedRouteIndex ? 6 : 3,
                             ),
                         ],
                       ),
@@ -385,107 +382,146 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
                     right: 16,
                     child: Card(
                       elevation: 8,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Available Routes',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Available Routes',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  '${_routes.length} options',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
                             ),
                             SizedBox(height: 12),
-                            ...List.generate(_routes.length, (index) {
-                              final route = _routes[index];
-                              final isSelected = index == _selectedRouteIndex;
+                            ConstrainedBox(
+                              constraints: BoxConstraints(maxHeight: 200),
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                itemCount: _routes.length,
+                                itemBuilder: (context, index) {
+                                  final routeData = _routes[index];
+                                  final isSelected = index == _selectedRouteIndex;
+                                  final routeColor = _getRouteColor(routeData.routeType);
 
-                              return GestureDetector(
-                                onTap: () => _selectRoute(index),
-                                child: Container(
-                                  margin: EdgeInsets.only(bottom: 8),
-                                  padding: EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? AppColors.primary.withOpacity(0.1)
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: isSelected
-                                          ? AppColors.primary
-                                          : Colors.grey.withOpacity(0.3),
-                                      width: isSelected ? 2 : 1,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        width: 4,
-                                        height: 40,
-                                        decoration: BoxDecoration(
+                                  return GestureDetector(
+                                    onTap: () => _selectRoute(index),
+                                    child: Container(
+                                      margin: EdgeInsets.only(bottom: 8),
+                                      padding: EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? routeColor.withOpacity(0.1)
+                                            : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
                                           color: isSelected
-                                              ? AppColors.primary
-                                              : AppColors.secondary,
-                                          borderRadius: BorderRadius.circular(
-                                            2,
-                                          ),
+                                              ? routeColor
+                                              : Colors.grey.withOpacity(0.3),
+                                          width: isSelected ? 2 : 1,
                                         ),
                                       ),
-                                      SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              _getRouteName(index),
-                                              style: theme.textTheme.bodyLarge
-                                                  ?.copyWith(
+                                      child: Row(
+                                        children: [
+                                          // Route type icon
+                                          Container(
+                                            padding: EdgeInsets.all(8),
+                                            decoration: BoxDecoration(
+                                              color: routeColor.withOpacity(0.1),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Icon(
+                                              _getRouteIcon(routeData.routeType),
+                                              color: routeColor,
+                                              size: 20,
+                                            ),
+                                          ),
+                                          SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  routeData.name,
+                                                  style: theme.textTheme.bodyLarge?.copyWith(
                                                     fontWeight: FontWeight.bold,
                                                   ),
-                                            ),
-                                            SizedBox(height: 4),
-                                            Row(
-                                              children: [
-                                                Icon(
-                                                  Icons.route,
-                                                  size: 16,
-                                                  color: Colors.grey,
                                                 ),
-                                                SizedBox(width: 4),
+                                                SizedBox(height: 2),
                                                 Text(
-                                                  '${(route.totalDistance / 1000).toStringAsFixed(1)} km',
-                                                  style:
-                                                      theme.textTheme.bodySmall,
+                                                  routeData.description,
+                                                  style: theme.textTheme.bodySmall?.copyWith(
+                                                    color: Colors.grey[600],
+                                                  ),
                                                 ),
-                                                SizedBox(width: 16),
-                                                Icon(
-                                                  Icons.access_time,
-                                                  size: 16,
-                                                  color: Colors.grey,
-                                                ),
-                                                SizedBox(width: 4),
-                                                Text(
-                                                  '${(route.totalDuration / 60).toStringAsFixed(0)} min',
-                                                  style:
-                                                      theme.textTheme.bodySmall,
+                                                SizedBox(height: 4),
+                                                Row(
+                                                  children: [
+                                                    Icon(Icons.route, size: 14, color: Colors.grey),
+                                                    SizedBox(width: 4),
+                                                    Text(
+                                                      '${(routeData.route.totalDistance / 1000).toStringAsFixed(1)} km',
+                                                      style: theme.textTheme.bodySmall?.copyWith(
+                                                        fontWeight: FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                    SizedBox(width: 12),
+                                                    Icon(Icons.access_time, size: 14, color: Colors.grey),
+                                                    SizedBox(width: 4),
+                                                    Text(
+                                                      '${(routeData.route.totalDuration / 60).round()} min',
+                                                      style: theme.textTheme.bodySmall?.copyWith(
+                                                        fontWeight: FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ],
                                             ),
-                                          ],
-                                        ),
+                                          ),
+                                          if (isSelected)
+                                            Icon(
+                                              Icons.check_circle,
+                                              color: routeColor,
+                                            ),
+                                        ],
                                       ),
-                                      if (isSelected)
-                                        Icon(
-                                          Icons.check_circle,
-                                          color: AppColors.primary,
-                                        ),
-                                    ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _confirmRoute,
+                                icon: Icon(Icons.check),
+                                label: Text('Select This Route'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: EdgeInsets.symmetric(vertical: 14),
+                                  backgroundColor: _getRouteColor(_routes[_selectedRouteIndex].routeType),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
                                 ),
-                              );
-                            }),
+                              ),
+                            ),
                           ],
                         ),
                       ),
