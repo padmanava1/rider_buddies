@@ -65,7 +65,7 @@ class ModeSelectionScreen extends StatelessWidget {
             _ModeButton(
               label: 'Random',
               icon: Icons.shuffle,
-              color: theme.colorScheme.tertiary ?? Colors.grey,
+              color: theme.colorScheme.tertiary,
               onTap: () {
                 HapticService.mediumImpact();
                 Navigator.push(
@@ -103,7 +103,7 @@ class _ModeButton extends StatelessWidget {
       onTap: onTap,
       child: Ink(
         decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
+          color: color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: color, width: 2),
         ),

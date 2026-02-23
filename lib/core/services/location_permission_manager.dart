@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import '../../widgets/location_permission_dialog.dart';
 import '../theme/app_colors.dart';
 
@@ -215,7 +214,7 @@ class LocationPermissionManager {
             Container(
               padding: EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -276,7 +275,7 @@ class LocationPermissionManager {
             Container(
               padding: EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(

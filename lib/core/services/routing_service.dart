@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'dart:convert';
@@ -78,11 +79,11 @@ class RoutingService {
         final data = json.decode(response.body);
         return _parseRouteResponse(data);
       } else {
-        print('Routing API error: ${response.statusCode}');
+        debugPrint('Routing API error: ${response.statusCode}');
         return null;
       }
     } catch (e) {
-      print('Error getting route: $e');
+      debugPrint('Error getting route: $e');
       return null;
     }
   }
@@ -110,11 +111,11 @@ class RoutingService {
         final data = json.decode(response.body);
         return _parseRouteResponse(data);
       } else {
-        print('Routing API error: ${response.statusCode}');
+        debugPrint('Routing API error: ${response.statusCode}');
         return null;
       }
     } catch (e) {
-      print('Error getting route with waypoints: $e');
+      debugPrint('Error getting route with waypoints: $e');
       return null;
     }
   }
@@ -187,7 +188,7 @@ class RoutingService {
         fullPolyline: fullPolyline,
       );
     } catch (e) {
-      print('Error parsing route response: $e');
+      debugPrint('Error parsing route response: $e');
       return null;
     }
   }
@@ -221,11 +222,11 @@ class RoutingService {
             .cast<RouteResult>()
             .toList();
       } else {
-        print('Routing API error: ${response.statusCode}');
+        debugPrint('Routing API error: ${response.statusCode}');
         return [];
       }
     } catch (e) {
-      print('Error getting alternative routes: $e');
+      debugPrint('Error getting alternative routes: $e');
       return [];
     }
   }
@@ -243,7 +244,7 @@ class RoutingService {
     if (hasBreakPoints) {
       // ===== BREAKPOINTS MODE =====
       // ALL routes must pass through the breakpoints
-      print('Generating routes through ${breakPoints.length} break point(s)...');
+      debugPrint('Generating routes through ${breakPoints.length} break point(s)...');
 
       // Primary waypoints: start -> breakpoints -> end
       List<LatLng> waypoints = [start, ...breakPoints, end];
@@ -266,7 +267,7 @@ class RoutingService {
     } else {
       // ===== NO BREAKPOINTS MODE =====
       // Standard routing with alternatives
-      print('Fetching OSRM routes with alternatives...');
+      debugPrint('Fetching OSRM routes with alternatives...');
       final osrmRoutes = await getAlternativeRoutes(start, end, alternatives: 5);
 
       for (int i = 0; i < osrmRoutes.length; i++) {
@@ -304,7 +305,7 @@ class RoutingService {
 
       // Generate more alternatives if needed
       if (allRoutes.length < 3) {
-        print('Generating waypoint-based alternatives...');
+        debugPrint('Generating waypoint-based alternatives...');
         final waypointRoutes = await _generateWaypointAlternatives(start, end);
         for (var route in waypointRoutes) {
           if (_isRouteSufficientlyDifferent(route.route, allRoutes.map((r) => r.route).toList())) {
@@ -413,7 +414,7 @@ class RoutingService {
         }
       }
     } catch (e) {
-      print('Error generating breakpoint alternatives: $e');
+      debugPrint('Error generating breakpoint alternatives: $e');
     }
   }
 
@@ -453,7 +454,7 @@ class RoutingService {
           ));
         }
       } catch (e) {
-        print('Error generating waypoint alternative: $e');
+        debugPrint('Error generating waypoint alternative: $e');
       }
     }
 

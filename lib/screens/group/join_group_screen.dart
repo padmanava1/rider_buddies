@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:provider/provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
-import '../../core/services/haptic_service.dart';
 import '../../core/theme/app_colors.dart';
 import 'group_status_screen.dart';
 

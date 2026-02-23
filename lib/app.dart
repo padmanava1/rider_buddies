@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter/foundation.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/app_colors.dart';
 import 'providers/theme_provider.dart';
@@ -101,7 +100,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [AppColors.primary.withOpacity(0.1), Colors.white],
+            colors: [AppColors.primary.withValues(alpha: 0.1), Colors.white],
           ),
         ),
         child: Center(
@@ -119,10 +118,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
                       width: 120,
                       height: 120,
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
+                        color: AppColors.primary.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: AppColors.primary.withOpacity(0.3),
+                          color: AppColors.primary.withValues(alpha: 0.3),
                           width: 2,
                         ),
                       ),
@@ -152,10 +151,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
+                          color: AppColors.primary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: AppColors.primary.withOpacity(0.3),
+                            color: AppColors.primary.withValues(alpha: 0.3),
                           ),
                         ),
                         child: Text(
@@ -189,8 +188,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
                             width: 8,
                             height: 8,
                             decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(
-                                0.3 + (0.7 * value),
+                              color: AppColors.primary.withValues(
+                                alpha: 0.3 + (0.7 * value),
                               ),
                               shape: BoxShape.circle,
                             ),
@@ -211,7 +210,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     if (!_isInitialized) {
-      return _buildAnimatedLoadingScreen('Initializing...');
+      return SplashScreen(autoNavigate: false);
     }
 
     return Consumer<AuthProvider>(

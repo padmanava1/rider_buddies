@@ -63,6 +63,7 @@ class _SignupScreenState extends State<SignupScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.primary,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -70,7 +71,7 @@ class _SignupScreenState extends State<SignupScreen>
             end: Alignment.bottomCenter,
             colors: [
               AppColors.primary,
-              AppColors.primary.withOpacity(0.8),
+              AppColors.primary.withValues(alpha: 0.8),
               AppColors.secondary,
             ],
           ),
@@ -127,7 +128,7 @@ class _SignupScreenState extends State<SignupScreen>
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
+                                  color: Colors.black.withValues(alpha: 0.1),
                                   blurRadius: 20,
                                   offset: Offset(0, 10),
                                 ),
@@ -153,7 +154,7 @@ class _SignupScreenState extends State<SignupScreen>
                             'Create your account to start riding together',
                             style: TextStyle(
                               fontSize: 14,
-                              color: Colors.white.withOpacity(0.9),
+                              color: Colors.white.withValues(alpha: 0.9),
                             ),
                             textAlign: TextAlign.center,
                           ),
@@ -171,7 +172,7 @@ class _SignupScreenState extends State<SignupScreen>
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
+                            color: Colors.black.withValues(alpha: 0.1),
                             blurRadius: 20,
                             offset: Offset(0, 10),
                           ),

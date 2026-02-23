@@ -4,14 +4,12 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import '../../providers/group_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/services/haptic_service.dart';
 import '../../core/services/live_group_tracking.dart';
 import '../../core/services/location_permission_manager.dart';
 import '../../core/theme/app_colors.dart';
-import '../../widgets/location_permission_dialog.dart';
 import '../../widgets/map_markers.dart';
 import '../../providers/trip_provider.dart';
 
@@ -188,8 +186,8 @@ class _MapScreenState extends State<MapScreen> {
     _markers.clear();
     final tripProvider = Provider.of<TripProvider>(context, listen: false);
     final isLeader = tripProvider.isLeader;
-    final currentUser = Provider.of<AuthProvider>(context, listen: false).user;
-    final currentUserId = currentUser?.uid;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.userId;
     final trackingService = Provider.of<LiveGroupTracking>(
       context,
       listen: false,

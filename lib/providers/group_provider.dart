@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math';
+import '../core/services/supabase_service.dart';
 
 class GroupProvider extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final SupabaseClient _supabase = SupabaseService.client;
 
   String? _activeGroupCode;
   Map<String, dynamic>? _activeGroupData;
+  String? _currentUserId;
   bool _isLoading = false;
   String? _error;
 
@@ -22,67 +22,105 @@ class GroupProvider extends ChangeNotifier {
     _loadActiveGroup();
   }
 
-  // Load active group for current user
+  Future<String?> _getCurrentUserId() async {
+    if (_currentUserId != null) return _currentUserId;
+
+    final authUser = _supabase.auth.currentUser;
+    if (authUser == null) return null;
+
+    try {
+      final response = await _supabase
+          .from('users')
+          .select('id')
+          .eq('auth_id', authUser.id)
+          .maybeSingle();
+
+      if (response != null) {
+        _currentUserId = response['id'];
+      }
+      return _currentUserId;
+    } catch (e) {
+      debugPrint('Error getting current user ID: $e');
+      return null;
+    }
+  }
+
   Future<void> _loadActiveGroup() async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) return;
+      final userId = await _getCurrentUserId();
+      if (userId == null) return;
 
-      // Check if user is part of any active group
-      final userGroups = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      // Get user's active group code
+      final userResponse = await _supabase
+          .from('users')
+          .select('active_group_code')
+          .eq('id', userId)
+          .maybeSingle();
 
-      if (userGroups.exists) {
-        final userData = userGroups.data();
-        if (userData != null) {
-          final activeGroup = userData['activeGroupCode'] as String?;
+      if (userResponse == null) return;
 
-          if (activeGroup != null) {
-            // Verify group still exists and user is still a member
-            final groupDoc = await _firestore
-                .collection('groups')
-                .doc(activeGroup)
-                .get();
-
-            if (groupDoc.exists) {
-              final groupData = groupDoc.data();
-              if (groupData != null) {
-                final members = List<String>.from(groupData['members'] ?? []);
-
-                if (members.contains(user.uid)) {
-                  _activeGroupCode = activeGroup;
-                  _activeGroupData = groupData as Map<String, dynamic>;
-                  notifyListeners();
-                  return;
-                }
-              }
-            }
-          }
-        }
+      final activeGroupCode = userResponse['active_group_code'] as String?;
+      if (activeGroupCode == null) {
+        _activeGroupCode = null;
+        _activeGroupData = null;
+        notifyListeners();
+        return;
       }
 
-      // No active group found
-      _activeGroupCode = null;
-      _activeGroupData = null;
-      notifyListeners();
+      // Verify group exists and user is a member
+      final groupResponse = await _supabase
+          .from('groups')
+          .select()
+          .eq('code', activeGroupCode)
+          .maybeSingle();
+
+      if (groupResponse == null) {
+        _activeGroupCode = null;
+        _activeGroupData = null;
+        notifyListeners();
+        return;
+      }
+
+      // Check if user is a member
+      final memberCheck = await _supabase
+          .from('group_members')
+          .select()
+          .eq('group_code', activeGroupCode)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (memberCheck != null) {
+        _activeGroupCode = activeGroupCode;
+        _activeGroupData = groupResponse;
+
+        // Load member details
+        final members = await _supabase
+            .from('group_members')
+            .select()
+            .eq('group_code', activeGroupCode);
+
+        _activeGroupData!['members'] = members;
+        notifyListeners();
+      } else {
+        _activeGroupCode = null;
+        _activeGroupData = null;
+        notifyListeners();
+      }
     } catch (e) {
-      print('Error loading active group: $e');
+      debugPrint('Error loading active group: $e');
       _error = 'Failed to load active group';
       notifyListeners();
     }
   }
 
-  // Create a new group
   Future<bool> createGroup(String mode) async {
     try {
       _isLoading = true;
       _error = null;
       notifyListeners();
 
-      final user = _auth.currentUser;
-      if (user == null) {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
         _error = 'User not authenticated';
         return false;
       }
@@ -91,188 +129,217 @@ class GroupProvider extends ChangeNotifier {
       final code = _generateGroupCode();
 
       // Get user profile
-      final userProfile = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      final userProfile = await _supabase
+          .from('users')
+          .select('name, email')
+          .eq('id', userId)
+          .single();
 
-      final userData = userProfile.data() as Map<String, dynamic>?;
-      final userName = userData?['name'] ?? 'Unknown User';
-
-      final groupData = {
-        'code': code,
-        'mode': mode,
-        'createdAt': FieldValue.serverTimestamp(),
-        'isActive': true,
-        'members': [user.uid],
-        'leader': user.uid,
-        'memberDetails': {
-          user.uid: {
-            'name': userName,
-            'email': user.email,
-            'joinedAt': FieldValue.serverTimestamp(),
-            'lastSeen': FieldValue.serverTimestamp(),
-          },
-        },
-      };
+      final userName = userProfile['name'] ?? 'Unknown User';
+      final userEmail = userProfile['email'];
 
       // Create group
-      await _firestore.collection('groups').doc(code).set(groupData);
-
-      // Update user's active group
-      await _firestore.collection('users').doc(user.uid).update({
-        'activeGroupCode': code,
-        'lastActive': FieldValue.serverTimestamp(),
+      await _supabase.from('groups').insert({
+        'code': code,
+        'mode': mode,
+        'is_active': true,
+        'leader_id': userId,
+        'created_at': DateTime.now().toIso8601String(),
+        'last_updated': DateTime.now().toIso8601String(),
       });
 
+      // Add user as member
+      await _supabase.from('group_members').insert({
+        'group_code': code,
+        'user_id': userId,
+        'name': userName,
+        'email': userEmail,
+        'joined_at': DateTime.now().toIso8601String(),
+        'last_seen': DateTime.now().toIso8601String(),
+      });
+
+      // Update user's active group
+      await _supabase.from('users').update({
+        'active_group_code': code,
+        'last_active': DateTime.now().toIso8601String(),
+      }).eq('id', userId);
+
       _activeGroupCode = code;
-      _activeGroupData = groupData;
+      _activeGroupData = {
+        'code': code,
+        'mode': mode,
+        'is_active': true,
+        'leader_id': userId,
+      };
+
       _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
       _error = 'Failed to create group';
       _isLoading = false;
-      print('Error creating group: $e');
+      debugPrint('Error creating group: $e');
       notifyListeners();
       return false;
     }
   }
 
-  // Join an existing group
   Future<bool> joinGroup(String code) async {
     try {
       _isLoading = true;
       _error = null;
       notifyListeners();
 
-      final user = _auth.currentUser;
-      if (user == null) {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
         _error = 'User not authenticated';
         return false;
       }
 
       // Check if group exists
-      final groupDoc = await _firestore.collection('groups').doc(code).get();
+      final groupResponse = await _supabase
+          .from('groups')
+          .select()
+          .eq('code', code)
+          .maybeSingle();
 
-      if (!groupDoc.exists) {
+      if (groupResponse == null) {
         _error = 'Group not found';
-        return false;
-      }
-
-      final groupData = groupDoc.data();
-      if (groupData == null) {
-        _error = 'Invalid group data';
         _isLoading = false;
         notifyListeners();
         return false;
       }
 
-      final members = List<String>.from(groupData['members'] ?? []);
-
       // Check if user is already a member
-      if (members.contains(user.uid)) {
+      final existingMember = await _supabase
+          .from('group_members')
+          .select()
+          .eq('group_code', code)
+          .eq('user_id', userId)
+          .maybeSingle();
+
+      if (existingMember != null) {
+        // Already a member, just update active group
+        await _supabase.from('users').update({
+          'active_group_code': code,
+          'last_active': DateTime.now().toIso8601String(),
+        }).eq('id', userId);
+
         _activeGroupCode = code;
-        _activeGroupData = groupData as Map<String, dynamic>;
+        _activeGroupData = groupResponse;
         _isLoading = false;
         notifyListeners();
         return true;
       }
 
       // Get user profile
-      final userProfile = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .get();
+      final userProfile = await _supabase
+          .from('users')
+          .select('name, email')
+          .eq('id', userId)
+          .single();
 
-      final userData = userProfile.data();
-      final userName = userData?['name']?.toString() ?? 'Unknown User';
+      final userName = userProfile['name'] ?? 'Unknown User';
+      final userEmail = userProfile['email'];
 
       // Add user to group
-      members.add(user.uid);
-      final memberDetails = Map<String, dynamic>.from(
-        groupData['memberDetails'] ?? {},
-      );
-      memberDetails[user.uid] = {
+      await _supabase.from('group_members').insert({
+        'group_code': code,
+        'user_id': userId,
         'name': userName,
-        'email': user.email,
-        'joinedAt': FieldValue.serverTimestamp(),
-        'lastSeen': FieldValue.serverTimestamp(),
-      };
-
-      await _firestore.collection('groups').doc(code).update({
-        'members': members,
-        'memberDetails': memberDetails,
-        'lastUpdated': FieldValue.serverTimestamp(),
+        'email': userEmail,
+        'joined_at': DateTime.now().toIso8601String(),
+        'last_seen': DateTime.now().toIso8601String(),
       });
+
+      // Update group last_updated
+      await _supabase.from('groups').update({
+        'last_updated': DateTime.now().toIso8601String(),
+      }).eq('code', code);
 
       // Update user's active group
-      await _firestore.collection('users').doc(user.uid).update({
-        'activeGroupCode': code,
-        'lastActive': FieldValue.serverTimestamp(),
-      });
+      await _supabase.from('users').update({
+        'active_group_code': code,
+        'last_active': DateTime.now().toIso8601String(),
+      }).eq('id', userId);
 
       _activeGroupCode = code;
-      _activeGroupData = groupData;
+      _activeGroupData = groupResponse;
       _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
       _error = 'Failed to join group';
       _isLoading = false;
-      print('Error joining group: $e');
+      debugPrint('Error joining group: $e');
       notifyListeners();
       return false;
     }
   }
 
-  // Leave current group
   Future<bool> leaveGroup() async {
     try {
       if (_activeGroupCode == null) return true;
 
-      final user = _auth.currentUser;
-      if (user == null) return false;
+      final userId = await _getCurrentUserId();
+      if (userId == null) return false;
 
-      // Remove user from group
-      final groupDoc = await _firestore
-          .collection('groups')
-          .doc(_activeGroupCode)
-          .get();
+      // Remove user from group_members
+      await _supabase
+          .from('group_members')
+          .delete()
+          .eq('group_code', _activeGroupCode!)
+          .eq('user_id', userId);
 
-      if (groupDoc.exists) {
-        final groupData = groupDoc.data();
-        if (groupData != null) {
-          final members = List<String>.from(groupData['members'] ?? []);
-          final memberDetails = Map<String, dynamic>.from(
-            groupData['memberDetails'] ?? {},
-          );
+      // Remove user from member_locations
+      await _supabase
+          .from('member_locations')
+          .delete()
+          .eq('group_code', _activeGroupCode!)
+          .eq('user_id', userId);
 
-          members.remove(user.uid);
-          memberDetails.remove(user.uid);
+      // Check if group has any remaining members
+      final remainingMembers = await _supabase
+          .from('group_members')
+          .select()
+          .eq('group_code', _activeGroupCode!);
 
-          if (members.isEmpty) {
-            // Delete group if no members left
-            await _firestore
-                .collection('groups')
-                .doc(_activeGroupCode)
-                .delete();
-          } else {
-            // Update group
-            await _firestore.collection('groups').doc(_activeGroupCode).update({
-              'members': members,
-              'memberDetails': memberDetails,
-              'lastUpdated': FieldValue.serverTimestamp(),
-            });
-          }
+      if ((remainingMembers as List).isEmpty) {
+        // Delete group and related data
+        await _supabase
+            .from('trip_notifications')
+            .delete()
+            .eq('group_code', _activeGroupCode!);
+
+        // Delete trips and related data
+        final trips = await _supabase
+            .from('trips')
+            .select('id')
+            .eq('group_code', _activeGroupCode!);
+
+        for (final trip in trips as List) {
+          await _supabase.from('trip_points').delete().eq('trip_id', trip['id']);
+          await _supabase.from('trip_routes').delete().eq('trip_id', trip['id']);
         }
+
+        await _supabase.from('trips').delete().eq('group_code', _activeGroupCode!);
+        await _supabase
+            .from('member_locations')
+            .delete()
+            .eq('group_code', _activeGroupCode!);
+        await _supabase.from('groups').delete().eq('code', _activeGroupCode!);
+      } else {
+        // Update group
+        await _supabase.from('groups').update({
+          'last_updated': DateTime.now().toIso8601String(),
+        }).eq('code', _activeGroupCode!);
       }
 
       // Remove active group from user
-      await _firestore.collection('users').doc(user.uid).update({
-        'activeGroupCode': null,
-        'lastActive': FieldValue.serverTimestamp(),
-      });
+      await _supabase.from('users').update({
+        'active_group_code': null,
+        'last_active': DateTime.now().toIso8601String(),
+      }).eq('id', userId);
 
       _activeGroupCode = null;
       _activeGroupData = null;
@@ -280,41 +347,42 @@ class GroupProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _error = 'Failed to leave group';
-      print('Error leaving group: $e');
+      debugPrint('Error leaving group: $e');
       notifyListeners();
       return false;
     }
   }
 
-  // Refresh active group data
   Future<void> refreshActiveGroup() async {
     if (_activeGroupCode == null) return;
 
     try {
-      final groupDoc = await _firestore
-          .collection('groups')
-          .doc(_activeGroupCode)
-          .get();
+      final groupResponse = await _supabase
+          .from('groups')
+          .select()
+          .eq('code', _activeGroupCode!)
+          .maybeSingle();
 
-      if (groupDoc.exists) {
-        final groupData = groupDoc.data();
-        if (groupData != null) {
-          _activeGroupData = groupData as Map<String, dynamic>;
-          notifyListeners();
-        } else {
-          // Group data is null, leave the group
-          await leaveGroup();
-        }
+      if (groupResponse != null) {
+        _activeGroupData = groupResponse;
+
+        // Load member details
+        final members = await _supabase
+            .from('group_members')
+            .select()
+            .eq('group_code', _activeGroupCode!);
+
+        _activeGroupData!['members'] = members;
+        notifyListeners();
       } else {
         // Group no longer exists
         await leaveGroup();
       }
     } catch (e) {
-      print('Error refreshing active group: $e');
+      debugPrint('Error refreshing active group: $e');
     }
   }
 
-  // Generate unique group code
   String _generateGroupCode([int length = 6]) {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rand = Random.secure();

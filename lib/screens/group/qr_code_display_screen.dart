@@ -123,7 +123,7 @@ class _QRCodeDisplayScreenState extends State<QRCodeDisplayScreen>
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withValues(alpha: 0.1),
                         blurRadius: 10,
                         offset: Offset(0, 4),
                       ),
@@ -137,7 +137,14 @@ class _QRCodeDisplayScreenState extends State<QRCodeDisplayScreen>
                         version: QrVersions.auto,
                         size: 250.0,
                         backgroundColor: Colors.white,
-                        foregroundColor: Colors.black,
+                        dataModuleStyle: const QrDataModuleStyle(
+                          color: Colors.black,
+                          dataModuleShape: QrDataModuleShape.square,
+                        ),
+                        eyeStyle: const QrEyeStyle(
+                          color: Colors.black,
+                          eyeShape: QrEyeShape.square,
+                        ),
                       ),
                       SizedBox(height: 24),
 
@@ -182,7 +189,7 @@ class _QRCodeDisplayScreenState extends State<QRCodeDisplayScreen>
                             borderRadius: BorderRadius.circular(12),
                           ),
                           side: BorderSide(
-                            color: AppColors.primary.withOpacity(0.5),
+                            color: AppColors.primary.withValues(alpha: 0.5),
                           ),
                         ),
                       ),

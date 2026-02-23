@@ -274,7 +274,7 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
                               points: _routes[i].route.fullPolyline,
                               color: i == _selectedRouteIndex
                                   ? _getRouteColor(_routes[i].routeType)
-                                  : _getRouteColor(_routes[i].routeType).withOpacity(0.4),
+                                  : _getRouteColor(_routes[i].routeType).withValues(alpha: 0.4),
                               strokeWidth: i == _selectedRouteIndex ? 6 : 3,
                             ),
                         ],
@@ -425,13 +425,13 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
                                       padding: EdgeInsets.all(12),
                                       decoration: BoxDecoration(
                                         color: isSelected
-                                            ? routeColor.withOpacity(0.1)
+                                            ? routeColor.withValues(alpha: 0.1)
                                             : Colors.transparent,
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
                                           color: isSelected
                                               ? routeColor
-                                              : Colors.grey.withOpacity(0.3),
+                                              : Colors.grey.withValues(alpha: 0.3),
                                           width: isSelected ? 2 : 1,
                                         ),
                                       ),
@@ -441,7 +441,7 @@ class _RouteSelectionScreenState extends State<RouteSelectionScreen> {
                                           Container(
                                             padding: EdgeInsets.all(8),
                                             decoration: BoxDecoration(
-                                              color: routeColor.withOpacity(0.1),
+                                              color: routeColor.withValues(alpha: 0.1),
                                               borderRadius: BorderRadius.circular(8),
                                             ),
                                             child: Icon(

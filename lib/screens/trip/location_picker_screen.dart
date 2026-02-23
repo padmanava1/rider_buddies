@@ -170,6 +170,38 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
     }
   }
 
+  /// Debounced search - use for onChanged to prevent rapid API calls
+  Future<void> _searchLocationDebounced(String query) async {
+    if (query.trim().isEmpty) {
+      setState(() => _searchResults = []);
+      return;
+    }
+
+    try {
+      setState(() => _isLoading = true);
+      debugPrint('Debounced search for: $query');
+
+      // Use debounced search - waits 500ms after last keystroke
+      final results = await OlaMapsService.searchPlacesDebounced(query);
+
+      if (mounted) {
+        setState(() {
+          _searchResults = results;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      // Cancelled searches throw errors - ignore them
+      if (e.toString() != 'Cancelled' && mounted) {
+        debugPrint('Debounced search error: $e');
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// Immediate search - use for onSubmitted for instant results
   Future<void> _searchLocation(String query) async {
     if (query.trim().isEmpty) {
       setState(() => _searchResults = []);
@@ -180,64 +212,24 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
       setState(() => _isLoading = true);
       debugPrint('Searching for location: $query');
 
-      // Try Ola Maps API first
+      // Try Ola Maps API (with caching)
       final olaResults = await OlaMapsService.searchPlaces(query);
       debugPrint('Ola Maps results: ${olaResults.length}');
 
-      if (olaResults.isNotEmpty) {
-        debugPrint('Using Ola Maps results');
+      if (mounted) {
         setState(() {
           _searchResults = olaResults;
           _isLoading = false;
         });
-        return;
       }
-
-      debugPrint('Ola Maps returned no results, trying fallback');
-
-      // Fallback to geocoding
-      List<Location> locations = await locationFromAddress(query);
-      debugPrint('Geocoding results: ${locations.length}');
-
-      List<Map<String, dynamic>> results = [];
-      for (Location location in locations.take(5)) {
-        try {
-          List<Placemark> placemarks = await placemarkFromCoordinates(
-            location.latitude,
-            location.longitude,
-          );
-
-          if (placemarks.isNotEmpty) {
-            Placemark place = placemarks[0];
-            String address = [
-              place.street,
-              place.locality,
-              place.administrativeArea,
-            ].where((part) => part != null && part.isNotEmpty).join(', ');
-
-            results.add({
-              'name': place.name ?? place.locality ?? 'Unknown Location',
-              'address': address,
-              'coordinates': LatLng(location.latitude, location.longitude),
-              'source': 'Geocoding Fallback',
-            });
-          }
-        } catch (e) {
-          debugPrint('Error getting placemark: $e');
-        }
-      }
-
-      debugPrint('Final results: ${results.length}');
-      setState(() {
-        _searchResults = results;
-        _isLoading = false;
-      });
     } catch (e) {
       debugPrint('Search error: $e');
-      setState(() {
-        _error = 'Search failed: $e';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Search failed: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -356,7 +348,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
               ),
               onChanged: (value) {
                 if (value.length > 2) {
-                  _searchLocation(value);
+                  _searchLocationDebounced(value); // Debounced to prevent rapid API calls
                 } else {
                   setState(() => _searchResults = []);
                 }
@@ -427,8 +419,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                         padding: EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           color: isOlaMaps
-                              ? Colors.green.withOpacity(0.1)
-                              : AppColors.primary.withOpacity(0.1),
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : AppColors.primary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
@@ -485,7 +477,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                                       height: 20,
                                       child: Container(
                                         decoration: BoxDecoration(
-                                          color: Colors.blue.withOpacity(0.3),
+                                          color: Colors.blue.withValues(alpha: 0.3),
                                           shape: BoxShape.circle,
                                           border: Border.all(color: Colors.blue, width: 2),
                                         ),
@@ -535,7 +527,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                                   borderRadius: BorderRadius.circular(8),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.1),
+                                      color: Colors.black.withValues(alpha: 0.1),
                                       blurRadius: 4,
                                     ),
                                   ],
@@ -556,7 +548,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                             child: Container(
                               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.6),
+                                color: Colors.black.withValues(alpha: 0.6),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Row(
@@ -589,12 +581,12 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: _selectedLocation != null
-                            ? AppColors.primary.withOpacity(0.3)
+                            ? AppColors.primary.withValues(alpha: 0.3)
                             : Colors.grey.shade300,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: Offset(0, 2),
                         ),
@@ -606,8 +598,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
                           padding: EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             color: _selectedLocation != null
-                                ? Colors.red.withOpacity(0.1)
-                                : Colors.grey.withOpacity(0.1),
+                                ? Colors.red.withValues(alpha: 0.1)
+                                : Colors.grey.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(

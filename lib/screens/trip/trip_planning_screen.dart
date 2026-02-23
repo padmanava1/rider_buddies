@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:flutter/foundation.dart';
 import '../../providers/trip_provider.dart';
 import '../../core/services/haptic_service.dart';
 import '../../core/theme/app_colors.dart';
@@ -280,9 +279,9 @@ class _TripPlanningScreenState extends State<TripPlanningScreen> {
       return Container(
         padding: EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.green.withOpacity(0.1),
+          color: Colors.green.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.green.withOpacity(0.3)),
+          border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -322,7 +321,7 @@ class _TripPlanningScreenState extends State<TripPlanningScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.green.withOpacity(0.3),
+            color: Colors.green.withValues(alpha: 0.3),
             blurRadius: 12,
             offset: Offset(0, 6),
           ),
@@ -355,7 +354,7 @@ class _TripPlanningScreenState extends State<TripPlanningScreen> {
                           ? '${(tripProvider.selectedRoute!.distance / 1000).toStringAsFixed(1)} km • ${(tripProvider.selectedRoute!.duration / 60).round()} min'
                           : 'Direct route will be used',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
                     ),
                   ],
@@ -390,7 +389,7 @@ class _TripPlanningScreenState extends State<TripPlanningScreen> {
               Container(
                 padding: EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  color: color.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(icon, color: color, size: 24),
@@ -443,7 +442,7 @@ class _TripPlanningScreenState extends State<TripPlanningScreen> {
       leading: Container(
         padding: EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.orange.withOpacity(0.1),
+          color: Colors.orange.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(Icons.coffee, color: Colors.orange, size: 20),
@@ -664,7 +663,7 @@ class _TripPlanningScreenState extends State<TripPlanningScreen> {
               Container(
                 padding: EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.1),
+                  color: Colors.grey.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -818,7 +817,7 @@ class _TripPlanningScreenState extends State<TripPlanningScreen> {
 
       // Test 4: Location Services
       debugPrint('Test 4: Testing Location Services...');
-      final locationPermission = await LocationPermissionManager.hasPermission;
+      final locationPermission = LocationPermissionManager.hasPermission;
       debugPrint(
         'Location Permission: ${locationPermission ? 'GRANTED' : 'DENIED'}',
       );

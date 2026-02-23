@@ -31,9 +31,9 @@ class AppColors {
 
   // Opacity variations
   static Color tealGreenWithOpacity(double opacity) =>
-      tealGreen.withOpacity(opacity);
-  static Color whiteWithOpacity(double opacity) => white.withOpacity(opacity);
-  static Color blackWithOpacity(double opacity) => black.withOpacity(opacity);
+      tealGreen.withValues(alpha: opacity);
+  static Color whiteWithOpacity(double opacity) => white.withValues(alpha: opacity);
+  static Color blackWithOpacity(double opacity) => black.withValues(alpha: opacity);
   static Color greyWithOpacity(double opacity) =>
-      mediumGrey.withOpacity(opacity);
+      mediumGrey.withValues(alpha: opacity);
 }

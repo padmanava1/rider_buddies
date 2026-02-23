@@ -60,6 +60,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.primary,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -67,7 +68,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             end: Alignment.bottomCenter,
             colors: [
               AppColors.primary,
-              AppColors.primary.withOpacity(0.8),
+              AppColors.primary.withValues(alpha: 0.8),
               AppColors.secondary,
             ],
           ),
@@ -99,7 +100,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                 end: Alignment.bottomCenter,
                                 colors: [
                                   AppColors.primary,
-                                  AppColors.primary.withOpacity(0.8),
+                                  AppColors.primary.withValues(alpha: 0.8),
                                 ],
                               ),
                             ),
@@ -116,7 +117,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                                       shape: BoxShape.circle,
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withOpacity(0.2),
+                                          color: Colors.black.withValues(alpha: 0.2),
                                           blurRadius: 20,
                                           offset: Offset(0, 10),
                                         ),
@@ -174,7 +175,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             borderRadius: BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
+                                color: Colors.black.withValues(alpha: 0.1),
                                 blurRadius: 20,
                                 offset: Offset(0, 10),
                               ),
@@ -225,8 +226,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                                         width: 100,
                                         height: 100,
                                         decoration: BoxDecoration(
-                                          color: AppColors.primary.withOpacity(
-                                            0.1,
+                                          color: AppColors.primary.withValues(
+                                            alpha: 0.1,
                                           ),
                                           shape: BoxShape.circle,
                                           border: Border.all(
@@ -505,7 +506,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       leading: Container(
         padding: EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.1),
+          color: AppColors.primary.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(icon, color: AppColors.primary, size: 20),
@@ -528,7 +529,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       leading: Container(
         padding: EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.1),
+          color: AppColors.primary.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(icon, color: AppColors.primary, size: 20),

@@ -91,7 +91,7 @@ class LocationService extends ChangeNotifier {
 
       return _currentLocation;
     } on PlatformException catch (e) {
-      print('Platform exception getting current location: $e');
+      debugPrint('Platform exception getting current location: $e');
       _error = 'Location service is unavailable. Please restart the app.';
       _isLoading = false;
       notifyListeners();

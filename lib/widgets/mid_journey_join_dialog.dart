@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../core/services/haptic_service.dart';
 import '../core/services/mid_journey_detection_service.dart';
 import '../core/theme/app_colors.dart';
-import 'package:latlong2/latlong.dart';
 
 class MidJourneyJoinDialog extends StatefulWidget {
   final MidJourneyStatus status;
@@ -148,8 +146,8 @@ class _MidJourneyJoinDialogState extends State<MidJourneyJoinDialog>
                 padding: EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: widget.status.isMidJourney
-                      ? AppColors.warning.withOpacity(0.1)
-                      : AppColors.primary.withOpacity(0.1),
+                      ? AppColors.warning.withValues(alpha: 0.1)
+                      : AppColors.primary.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -276,9 +274,9 @@ class _MidJourneyJoinDialogState extends State<MidJourneyJoinDialog>
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.05),
+        color: AppColors.primary.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

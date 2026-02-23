@@ -1,50 +1,74 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:convert';
+import '../core/services/supabase_service.dart';
 
 class AuthProvider extends ChangeNotifier {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final SupabaseClient _supabase = SupabaseService.client;
   final ImagePicker _picker = ImagePicker();
+  StreamSubscription<AuthState>? _authStateSubscription;
 
   User? _user;
+  String? _userId; // Database user ID (UUID)
+  Map<String, dynamic>? _userProfile;
   bool _isLoading = false;
   String? _error;
   String? _profileImageUrl;
 
   User? get user => _user;
+  String? get userId => _userId;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isAuthenticated => _user != null;
   String? get profileImageUrl => _profileImageUrl;
 
   AuthProvider() {
-    _auth.authStateChanges().listen((User? user) {
-      _user = user;
-      if (user != null) {
+    _authStateSubscription = _supabase.auth.onAuthStateChange.listen((data) {
+      _user = data.session?.user;
+      if (_user != null) {
         _loadUserProfile();
+      } else {
+        _userId = null;
+        _userProfile = null;
+        _profileImageUrl = null;
       }
       notifyListeners();
     });
+
+    // Check initial session
+    _user = _supabase.auth.currentUser;
+    if (_user != null) {
+      _loadUserProfile();
+    }
+  }
+
+  @override
+  void dispose() {
+    _authStateSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadUserProfile() async {
     if (_user == null) return;
 
     try {
-      final doc = await _firestore.collection('users').doc(_user!.uid).get();
-      if (doc.exists) {
-        final data = doc.data();
-        if (data != null) {
-          _profileImageUrl = data['profileImageUrl']?.toString();
-          notifyListeners();
-        }
+      final response = await _supabase
+          .from('users')
+          .select()
+          .eq('auth_id', _user!.id)
+          .maybeSingle();
+
+      if (response != null) {
+        _userProfile = response;
+        _userId = response['id'];
+        _profileImageUrl = response['profile_image_url'];
+        notifyListeners();
       }
     } catch (e) {
-      print('Error loading user profile: $e');
+      debugPrint('Error loading user profile: $e');
     }
   }
 
@@ -54,10 +78,17 @@ class AuthProvider extends ChangeNotifier {
       _error = null;
       notifyListeners();
 
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
+      await _supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
       return true;
-    } on FirebaseAuthException catch (e) {
-      _error = _getErrorMessage(e.code);
+    } on AuthException catch (e) {
+      _error = _getErrorMessage(e.message);
+      return false;
+    } catch (e) {
+      _error = 'An unexpected error occurred. Please try again.';
+      debugPrint('Unexpected error during login: $e');
       return false;
     } finally {
       _isLoading = false;
@@ -65,47 +96,13 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // Temporary method to test authentication without reCAPTCHA
   Future<bool> createUserWithEmailAndPasswordSimple(
     String email,
     String password,
     String name,
     String phone,
   ) async {
-    try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-
-      // Create user with minimal settings
-      UserCredential result = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      // Create user profile in Firestore
-      await _firestore.collection('users').doc(result.user!.uid).set({
-        'name': name,
-        'email': email,
-        'phone': phone,
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastActive': FieldValue.serverTimestamp(),
-        'profileImageUrl': null,
-      });
-
-      return true;
-    } on FirebaseAuthException catch (e) {
-      _error = _getErrorMessage(e.code);
-      print('Firebase Auth Error: ${e.code} - ${e.message}');
-      return false;
-    } catch (e) {
-      _error = 'An unexpected error occurred. Please try again.';
-      print('Unexpected error during signup: $e');
-      return false;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+    return createUserWithEmailAndPassword(email, password, name, phone);
   }
 
   Future<bool> createUserWithEmailAndPassword(
@@ -114,14 +111,59 @@ class AuthProvider extends ChangeNotifier {
     String name,
     String phone,
   ) async {
-    // Use the simple version for now to bypass reCAPTCHA issues
-    return createUserWithEmailAndPasswordSimple(email, password, name, phone);
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      // Create auth user
+      final authResponse = await _supabase.auth.signUp(
+        email: email,
+        password: password,
+      );
+
+      if (authResponse.user == null) {
+        _error = 'Failed to create user';
+        return false;
+      }
+
+      // Create user profile in database
+      final insertResponse = await _supabase.from('users').insert({
+        'auth_id': authResponse.user!.id,
+        'name': name,
+        'email': email,
+        'phone': phone,
+        'created_at': DateTime.now().toIso8601String(),
+        'last_active': DateTime.now().toIso8601String(),
+      }).select().single();
+
+      _userId = insertResponse['id'];
+
+      return true;
+    } on AuthException catch (e) {
+      _error = _getErrorMessage(e.message);
+      debugPrint('Supabase Auth Error: ${e.message}');
+      return false;
+    } on PostgrestException catch (e) {
+      _error = 'Failed to create profile: ${e.message}';
+      debugPrint('Supabase Database Error: ${e.message}');
+      return false;
+    } catch (e) {
+      _error = 'An unexpected error occurred. Please try again.';
+      debugPrint('Unexpected error during signup: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> signOut() async {
     try {
-      await _auth.signOut();
+      await _supabase.auth.signOut();
       _profileImageUrl = null;
+      _userProfile = null;
+      _userId = null;
     } catch (e) {
       _error = 'Failed to sign out';
       notifyListeners();
@@ -130,44 +172,32 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> updateUserProfile({String? name, String? phone}) async {
     try {
-      if (_user == null) return;
+      if (_user == null || _userId == null) return;
 
-      Map<String, dynamic> updates = {};
+      final updates = <String, dynamic>{
+        'last_active': DateTime.now().toIso8601String(),
+      };
       if (name != null) updates['name'] = name;
       if (phone != null) updates['phone'] = phone;
-      updates['lastActive'] = FieldValue.serverTimestamp();
 
-      await _firestore.collection('users').doc(_user!.uid).update(updates);
+      await _supabase.from('users').update(updates).eq('id', _userId!);
+
+      // Reload profile
+      await _loadUserProfile();
     } catch (e) {
       _error = 'Failed to update profile';
       notifyListeners();
     }
   }
 
-  // Test method to check Firebase Storage connectivity
   Future<bool> testFirebaseStorage() async {
-    try {
-      // This method is no longer needed as Firebase Storage is removed.
-      // Keeping it for now to avoid breaking existing calls, but it will always return true.
-      return true;
-    } catch (e) {
-      print('Firebase Storage test failed: $e');
-      return false;
-    }
+    // Legacy method - always returns true for Supabase
+    return true;
   }
 
   Future<String?> uploadProfileImage() async {
     try {
-      if (_user == null) return null;
-
-      // Test Firebase Storage first
-      final storageAvailable = await testFirebaseStorage();
-      if (!storageAvailable) {
-        _error =
-            'Storage service not available. Please check your internet connection.';
-        notifyListeners();
-        return null;
-      }
+      if (_user == null || _userId == null) return null;
 
       final pickedFile = await _picker.pickImage(
         source: ImageSource.gallery,
@@ -178,133 +208,48 @@ class AuthProvider extends ChangeNotifier {
 
       if (pickedFile == null) return null;
 
-      final file = File(pickedFile.path);
-      final fileName =
-          '${_user!.uid}_profile_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      // final ref = _storage.ref().child('profile_images/$fileName'); // Removed Firebase Storage
-
-      // Show loading state
       _isLoading = true;
       notifyListeners();
 
-      // Upload file
+      final file = File(pickedFile.path);
       final bytes = await file.readAsBytes();
       final base64String = base64Encode(bytes);
       final dataUrl = 'data:image/jpeg;base64,$base64String';
 
-      // Update Firestore
-      await _firestore.collection('users').doc(_user!.uid).update({
-        'profileImageUrl': dataUrl,
-        'lastActive': FieldValue.serverTimestamp(),
-      });
+      await _supabase.from('users').update({
+        'profile_image_url': dataUrl,
+        'last_active': DateTime.now().toIso8601String(),
+      }).eq('id', _userId!);
 
       _profileImageUrl = dataUrl;
       _error = null;
-      _isLoading = false;
-      notifyListeners();
       return dataUrl;
     } catch (e) {
       _error = 'Failed to upload profile image. Please try again.';
-      _isLoading = false;
-      print('Error uploading profile image: $e');
-      notifyListeners();
+      debugPrint('Error uploading profile image: $e');
       return null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
-  // Fallback method for testing without Firebase Storage
   Future<String?> uploadProfileImageFallback() async {
-    try {
-      if (_user == null) return null;
-
-      final pickedFile = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 80,
-        maxWidth: 512,
-        maxHeight: 512,
-      );
-
-      if (pickedFile == null) return null;
-
-      // For testing, just return a placeholder URL
-      final placeholderUrl =
-          'https://via.placeholder.com/200x200/4CAF50/FFFFFF?text=Profile';
-
-      // Update Firestore with placeholder
-      await _firestore.collection('users').doc(_user!.uid).update({
-        'profileImageUrl': placeholderUrl,
-        'lastActive': FieldValue.serverTimestamp(),
-      });
-
-      _profileImageUrl = placeholderUrl;
-      _error = null;
-      _isLoading = false;
-      notifyListeners();
-      return placeholderUrl;
-    } catch (e) {
-      _error = 'Failed to upload profile image. Please try again.';
-      _isLoading = false;
-      print('Error uploading profile image: $e');
-      notifyListeners();
-      return null;
-    }
+    return uploadProfileImage();
   }
 
-  // Base64 image upload method (free alternative to Firebase Storage)
   Future<String?> uploadProfileImageBase64() async {
-    try {
-      if (_user == null) return null;
-
-      final pickedFile = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 60, // Lower quality to reduce size
-        maxWidth: 300,
-        maxHeight: 300,
-      );
-
-      if (pickedFile == null) return null;
-
-      final file = File(pickedFile.path);
-      final bytes = await file.readAsBytes();
-      final base64String = base64Encode(bytes);
-
-      // Create a data URL
-      final dataUrl = 'data:image/jpeg;base64,$base64String';
-
-      // Show loading state
-      _isLoading = true;
-      notifyListeners();
-
-      // Store in Firestore
-      await _firestore.collection('users').doc(_user!.uid).update({
-        'profileImageUrl': dataUrl,
-        'lastActive': FieldValue.serverTimestamp(),
-      });
-
-      _profileImageUrl = dataUrl;
-      _error = null;
-      _isLoading = false;
-      notifyListeners();
-      return dataUrl;
-    } catch (e) {
-      _error = 'Failed to upload profile image. Please try again.';
-      _isLoading = false;
-      print('Error uploading profile image: $e');
-      notifyListeners();
-      return null;
-    }
+    return uploadProfileImage();
   }
 
-  // Remove profile image (base64 version)
   Future<void> removeProfileImageBase64() async {
     try {
-      if (_user == null) return;
+      if (_user == null || _userId == null) return;
 
-      // Update user profile
-      await _firestore.collection('users').doc(_user!.uid).update({
-        'profileImageUrl': null,
-        'lastActive': FieldValue.serverTimestamp(),
-      });
+      await _supabase.from('users').update({
+        'profile_image_url': null,
+        'last_active': DateTime.now().toIso8601String(),
+      }).eq('id', _userId!);
 
       _profileImageUrl = null;
       notifyListeners();
@@ -318,12 +263,10 @@ class AuthProvider extends ChangeNotifier {
     try {
       if (_user == null) return null;
 
-      DocumentSnapshot doc = await _firestore
-          .collection('users')
-          .doc(_user!.uid)
-          .get();
+      if (_userProfile != null) return _userProfile;
 
-      return doc.data() as Map<String, dynamic>?;
+      await _loadUserProfile();
+      return _userProfile;
     } catch (e) {
       _error = 'Failed to load profile';
       notifyListeners();
@@ -336,28 +279,31 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  String _getErrorMessage(String code) {
-    switch (code) {
-      case 'user-not-found':
-        return 'No user found with this email.';
-      case 'wrong-password':
-        return 'Wrong password provided.';
-      case 'email-already-in-use':
-        return 'An account already exists with this email.';
-      case 'weak-password':
-        return 'Password is too weak.';
-      case 'invalid-email':
-        return 'Invalid email address.';
-      case 'too-many-requests':
-        return 'Too many failed attempts. Please try again later.';
-      case 'configuration-not-found':
-        return 'Authentication configuration error. Please try again.';
-      case 'recaptcha-not-enabled':
-        return 'Security verification is not enabled. Please try again.';
-      case 'network-request-failed':
-        return 'Network error. Please check your internet connection.';
-      default:
-        return 'An error occurred. Please try again.';
+  String _getErrorMessage(String message) {
+    final lowerMessage = message.toLowerCase();
+
+    if (lowerMessage.contains('user not found') ||
+        lowerMessage.contains('invalid login')) {
+      return 'No user found with this email or wrong password.';
     }
+    if (lowerMessage.contains('email already')) {
+      return 'An account already exists with this email.';
+    }
+    if (lowerMessage.contains('weak password') ||
+        lowerMessage.contains('password')) {
+      return 'Password is too weak. Use at least 6 characters.';
+    }
+    if (lowerMessage.contains('invalid email')) {
+      return 'Invalid email address.';
+    }
+    if (lowerMessage.contains('too many requests') ||
+        lowerMessage.contains('rate limit')) {
+      return 'Too many attempts. Please try again later.';
+    }
+    if (lowerMessage.contains('network')) {
+      return 'Network error. Please check your internet connection.';
+    }
+
+    return message.isNotEmpty ? message : 'An error occurred. Please try again.';
   }
 }

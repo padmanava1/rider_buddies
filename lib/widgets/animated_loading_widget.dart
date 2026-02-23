@@ -84,7 +84,7 @@ class _AnimatedLoadingWidgetState extends State<AnimatedLoadingWidget>
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [primaryColor.withOpacity(0.1), Colors.white],
+          colors: [primaryColor.withValues(alpha: 0.1), Colors.white],
         ),
       ),
       child: Center(
@@ -101,10 +101,10 @@ class _AnimatedLoadingWidgetState extends State<AnimatedLoadingWidget>
                     width: 120,
                     height: 120,
                     decoration: BoxDecoration(
-                      color: primaryColor.withOpacity(0.1),
+                      color: primaryColor.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: primaryColor.withOpacity(0.3),
+                        color: primaryColor.withValues(alpha: 0.3),
                         width: 2,
                       ),
                     ),
@@ -129,10 +129,10 @@ class _AnimatedLoadingWidgetState extends State<AnimatedLoadingWidget>
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: primaryColor.withOpacity(0.1),
+                        color: primaryColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: primaryColor.withOpacity(0.3),
+                          color: primaryColor.withValues(alpha: 0.3),
                         ),
                       ),
                       child: Text(
@@ -181,8 +181,8 @@ class _AnimatedLoadingWidgetState extends State<AnimatedLoadingWidget>
                               width: 8,
                               height: 8,
                               decoration: BoxDecoration(
-                                color: primaryColor.withOpacity(
-                                  0.3 + (0.7 * dotAnimation.value),
+                                color: primaryColor.withValues(
+                                  alpha: 0.3 + (0.7 * dotAnimation.value),
                                 ),
                                 shape: BoxShape.circle,
                               ),

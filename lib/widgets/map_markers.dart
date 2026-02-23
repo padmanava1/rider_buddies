@@ -69,7 +69,7 @@ class MapMarkers {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withValues(alpha: 0.3),
                   blurRadius: 4,
                   offset: Offset(0, 2),
                 ),
@@ -170,7 +170,7 @@ class MapMarkers {
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.8),
+                color: Colors.black.withValues(alpha: 0.8),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: isCurrentUser ? AppColors.primary : memberColor,
@@ -210,7 +210,7 @@ class MapMarkers {
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withValues(alpha: 0.3),
                   blurRadius: 4,
                   offset: Offset(0, 2),
                 ),
@@ -225,7 +225,7 @@ class MapMarkers {
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.9),
+                color: AppColors.primary.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -261,7 +261,7 @@ class MapMarkers {
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withValues(alpha: 0.3),
                   blurRadius: 4,
                   offset: Offset(0, 2),
                 ),
@@ -276,7 +276,7 @@ class MapMarkers {
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.9),
+                color: Colors.red.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -312,7 +312,7 @@ class MapMarkers {
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
+                  color: Colors.black.withValues(alpha: 0.3),
                   blurRadius: 4,
                   offset: Offset(0, 2),
                 ),
@@ -327,7 +327,7 @@ class MapMarkers {
             child: Container(
               padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: AppColors.warning.withOpacity(0.9),
+                color: AppColors.warning.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -364,7 +364,7 @@ class MapMarkers {
               border: Border.all(color: Colors.white, width: 3),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.5),
+                  color: AppColors.primary.withValues(alpha: 0.5),
                   blurRadius: 8,
                   spreadRadius: 2,
                 ),

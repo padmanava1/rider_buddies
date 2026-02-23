@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:latlong2/latlong.dart';
 import '../../providers/trip_provider.dart';
-import '../../core/services/haptic_service.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/services/ola_maps_service.dart';
 import '../../core/services/routing_service.dart';
 
 class RouteDisplayScreen extends StatefulWidget {
@@ -30,15 +27,10 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen> {
   bool _isLoading = true;
   String? _error;
   LatLng? _pendingBreakPoint;
-  LatLng? _currentMapCenter;
-  double _currentMapZoom = 12;
-  int? _selectedBreakMarkerIndex;
 
   @override
   void initState() {
     super.initState();
-    _currentMapCenter = _getMapCenter();
-    _currentMapZoom = 12;
     _setupMap();
     _fetchSuggestedRoutes();
   }
@@ -269,26 +261,7 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen> {
     return LatLng(20.5937, 78.9629); // Default to India center
   }
 
-  void _zoomIn() {
-    if (_currentMapCenter != null) {
-      _mapController.move(_currentMapCenter!, _currentMapZoom + 1);
-    }
-  }
-
-  void _zoomOut() {
-    if (_currentMapCenter != null) {
-      _mapController.move(_currentMapCenter!, _currentMapZoom - 1);
-    }
-  }
-
-  void _onMapEvent(MapEvent event) {
-    setState(() {
-      _currentMapCenter = event.camera.center;
-      _currentMapZoom = event.camera.zoom;
-    });
-  }
-
-  void _onMapTap(TapPosition tapPosition, LatLng latlng) async {
+  void _handleMapTap(TapPosition tapPosition, LatLng latlng) async {
     // Check if tap is close to a break marker
     final breakMarkerIndex = _markers.indexWhere((marker) {
       final isBreak = marker.width == 30 && marker.height == 30;
@@ -391,53 +364,6 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen> {
     }
   }
 
-  void _onMarkerTap(int index) async {
-    // Only allow removal for break point markers
-    final marker = _markers[index];
-    final isBreakMarker = marker.width == 30 && marker.height == 30;
-    if (!isBreakMarker) return;
-    setState(() {
-      _selectedBreakMarkerIndex = index;
-    });
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Remove Break Point?'),
-        content: Text('Do you want to remove this break point?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Remove'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true) {
-      setState(() {
-        _markers.removeAt(index);
-        _selectedBreakMarkerIndex = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Break point removed (not persisted in this demo)'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    } else {
-      setState(() {
-        _selectedBreakMarkerIndex = null;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -481,7 +407,7 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen> {
                             height: 30,
                             child: Container(
                               decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.7),
+                                color: Colors.orange.withValues(alpha: 0.7),
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: Colors.white,
@@ -521,7 +447,7 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen> {
                                 ),
                                 decoration: BoxDecoration(
                                   color: i == _selectedRouteIndex
-                                      ? AppColors.primary.withOpacity(0.15)
+                                      ? AppColors.primary.withValues(alpha: 0.15)
                                       : Colors.transparent,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
@@ -563,7 +489,7 @@ class _RouteDisplayScreenState extends State<RouteDisplayScreen> {
             points: _suggestedRoutes[i],
             color: i == _selectedRouteIndex
                 ? AppColors.primary
-                : AppColors.secondary.withOpacity(0.5),
+                : AppColors.secondary.withValues(alpha: 0.5),
             strokeWidth: i == _selectedRouteIndex ? 6 : 4,
           ),
       ],

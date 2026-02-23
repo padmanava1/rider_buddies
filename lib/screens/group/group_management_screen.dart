@@ -140,7 +140,7 @@ class GroupManagementScreen extends StatelessWidget {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                side: BorderSide(color: AppColors.primary.withOpacity(0.5)),
+                side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
               ),
               onPressed: () {
                 HapticService.lightImpact();

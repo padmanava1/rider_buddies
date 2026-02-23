@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:latlong2/latlong.dart';
+import '../core/services/supabase_service.dart';
 
 class TripPoint {
   final String id;
@@ -45,10 +45,12 @@ class TripPoint {
         (map['latitude'] as num?)?.toDouble() ?? 0.0,
         (map['longitude'] as num?)?.toDouble() ?? 0.0,
       ),
-      type: map['type']?.toString() ?? 'unknown',
+      type: map['type']?.toString() ?? map['point_type']?.toString() ?? 'unknown',
       scheduledTime: map['scheduledTime'] != null
           ? DateTime.tryParse(map['scheduledTime'].toString())
-          : null,
+          : map['scheduled_time'] != null
+              ? DateTime.tryParse(map['scheduled_time'].toString())
+              : null,
       notes: map['notes']?.toString(),
     );
   }
@@ -112,8 +114,7 @@ class TripRoute {
 }
 
 class TripProvider extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final SupabaseClient _supabase = SupabaseService.client;
 
   String? _activeTripId;
   Map<String, dynamic>? _tripData;
@@ -122,6 +123,7 @@ class TripProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _isLeader = false;
+  String? _currentUserId;
 
   String? get activeTripId => _activeTripId;
   Map<String, dynamic>? get tripData => _tripData;
@@ -139,79 +141,87 @@ class TripProvider extends ChangeNotifier {
   List<TripPoint> get breakPoints =>
       _tripPoints.where((p) => p.type == 'break').toList();
 
-  // Load trip data for current group
+  Future<String?> _getCurrentUserId() async {
+    if (_currentUserId != null) return _currentUserId;
+
+    final authUser = _supabase.auth.currentUser;
+    if (authUser == null) return null;
+
+    try {
+      final response = await _supabase
+          .from('users')
+          .select('id')
+          .eq('auth_id', authUser.id)
+          .maybeSingle();
+
+      if (response != null) {
+        _currentUserId = response['id'];
+      }
+      return _currentUserId;
+    } catch (e) {
+      debugPrint('Error getting current user ID: $e');
+      return null;
+    }
+  }
+
   Future<void> loadTripData(String groupCode) async {
     try {
       _isLoading = true;
       _error = null;
       notifyListeners();
 
-      final user = _auth.currentUser;
-      if (user == null) return;
+      final userId = await _getCurrentUserId();
+      if (userId == null) return;
 
       // Check if user is leader
-      final groupDoc = await _firestore
-          .collection('groups')
-          .doc(groupCode)
-          .get();
-      if (groupDoc.exists) {
-        final groupData = groupDoc.data();
-        if (groupData != null) {
-          _isLeader = groupData['leader'] == user.uid;
-        }
+      final groupResponse = await _supabase
+          .from('groups')
+          .select('leader_id')
+          .eq('code', groupCode)
+          .maybeSingle();
+
+      if (groupResponse != null) {
+        _isLeader = groupResponse['leader_id'] == userId;
       }
 
       // Load trip data
-      final tripDoc = await _firestore
-          .collection('groups')
-          .doc(groupCode)
-          .collection('trip')
-          .doc('current')
-          .get();
+      final tripResponse = await _supabase
+          .from('trips')
+          .select()
+          .eq('group_code', groupCode)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
 
-      if (tripDoc.exists) {
-        final tripData = tripDoc.data();
-        if (tripData != null) {
-          _tripData = tripData as Map<String, dynamic>;
-          _activeTripId = tripDoc.id;
+      if (tripResponse != null) {
+        _tripData = tripResponse;
+        _activeTripId = tripResponse['id'];
 
-          // Load trip points
-          final pointsData = _tripData!['points'] as List<dynamic>? ?? [];
-          _tripPoints = pointsData
-              .map((p) {
-                if (p is Map<String, dynamic>) {
-                  return TripPoint.fromMap(p);
-                } else {
-                  debugPrint('Invalid point data: $p');
-                  return null;
-                }
-              })
-              .where((p) => p != null)
-              .cast<TripPoint>()
-              .toList();
+        // Load trip points
+        final pointsResponse = await _supabase
+            .from('trip_points')
+            .select()
+            .eq('trip_id', _activeTripId!)
+            .order('sort_order');
 
-          // Load selected route
-          final selectedRouteData = _tripData!['selectedRoute'];
-          if (selectedRouteData != null &&
-              selectedRouteData is Map<String, dynamic>) {
-            try {
-              _selectedRoute = TripRoute.fromMap(selectedRouteData);
-            } catch (e) {
-              debugPrint('Error parsing selected route: $e');
-              _selectedRoute = null;
-            }
-          } else {
-            _selectedRoute = null;
-          }
+        _tripPoints = (pointsResponse as List)
+            .map((p) => TripPoint.fromMap(p))
+            .toList();
+
+        // Load selected route
+        final routeResponse = await _supabase
+            .from('trip_routes')
+            .select()
+            .eq('trip_id', _activeTripId!)
+            .eq('is_selected', true)
+            .maybeSingle();
+
+        if (routeResponse != null) {
+          _selectedRoute = TripRoute.fromMap(routeResponse);
         } else {
-          debugPrint('Trip document exists but data is null');
-          _tripData = null;
-          _activeTripId = null;
-          _tripPoints = [];
           _selectedRoute = null;
         }
       } else {
-        // No trip document exists
         _tripData = null;
         _activeTripId = null;
         _tripPoints = [];
@@ -228,48 +238,37 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Create new trip
   Future<bool> createTrip(String groupCode) async {
     try {
       _isLoading = true;
       _error = null;
       notifyListeners();
 
-      final user = _auth.currentUser;
-      if (user == null) {
+      final userId = await _getCurrentUserId();
+      if (userId == null) {
         _error = 'User not authenticated';
         return false;
       }
 
-      final tripData = {
-        'createdAt': FieldValue.serverTimestamp(),
-        'createdBy': user.uid,
-        'status': 'planning', // planning, active, completed, cancelled
-        'points': [],
-        'routes': [],
-        'selectedRoute': null,
-        'lastUpdated': FieldValue.serverTimestamp(),
-      };
+      final tripResponse = await _supabase.from('trips').insert({
+        'group_code': groupCode,
+        'created_by': userId,
+        'status': 'planning',
+        'created_at': DateTime.now().toIso8601String(),
+        'last_updated': DateTime.now().toIso8601String(),
+      }).select().single();
 
-      await _firestore
-          .collection('groups')
-          .doc(groupCode)
-          .collection('trip')
-          .doc('current')
-          .set(tripData);
-
-      _activeTripId = 'current';
-      _tripData = tripData;
+      _activeTripId = tripResponse['id'];
+      _tripData = tripResponse;
       _tripPoints = [];
       _selectedRoute = null;
       _isLoading = false;
       notifyListeners();
 
-      // Only notify group members if user is a leader
       if (_isLeader) {
         await _notifyGroupMembers(groupCode, 'trip_created', {
           'message': 'Trip planning started',
-          'createdBy': user.uid,
+          'createdBy': userId,
         });
       }
 
@@ -283,26 +282,43 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Add trip point
   Future<bool> addTripPoint(String groupCode, TripPoint point) async {
     try {
-      _tripPoints.add(point);
+      if (_activeTripId == null) {
+        _error = 'No active trip';
+        return false;
+      }
 
-      final pointsData = _tripPoints.map((p) => p.toMap()).toList();
+      final pointResponse = await _supabase.from('trip_points').insert({
+        'trip_id': _activeTripId,
+        'name': point.name,
+        'address': point.address,
+        'latitude': point.coordinates.latitude,
+        'longitude': point.coordinates.longitude,
+        'point_type': point.type,
+        'scheduled_time': point.scheduledTime?.toIso8601String(),
+        'notes': point.notes,
+        'sort_order': _tripPoints.length,
+      }).select().single();
 
-      await _firestore
-          .collection('groups')
-          .doc(groupCode)
-          .collection('trip')
-          .doc('current')
-          .update({
-            'points': pointsData,
-            'lastUpdated': FieldValue.serverTimestamp(),
-          });
+      final newPoint = TripPoint(
+        id: pointResponse['id'],
+        name: point.name,
+        address: point.address,
+        coordinates: point.coordinates,
+        type: point.type,
+        scheduledTime: point.scheduledTime,
+        notes: point.notes,
+      );
+
+      _tripPoints.add(newPoint);
+
+      await _supabase.from('trips').update({
+        'last_updated': DateTime.now().toIso8601String(),
+      }).eq('id', _activeTripId!);
 
       notifyListeners();
 
-      // Only notify group members if user is a leader
       if (_isLeader) {
         await _notifyGroupMembers(groupCode, 'point_added', {
           'point': point.toMap(),
@@ -319,27 +335,20 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Remove trip point
   Future<bool> removeTripPoint(String groupCode, String pointId) async {
     try {
       final point = _tripPoints.firstWhere((p) => p.id == pointId);
+
+      await _supabase.from('trip_points').delete().eq('id', pointId);
+
       _tripPoints.removeWhere((p) => p.id == pointId);
 
-      final pointsData = _tripPoints.map((p) => p.toMap()).toList();
-
-      await _firestore
-          .collection('groups')
-          .doc(groupCode)
-          .collection('trip')
-          .doc('current')
-          .update({
-            'points': pointsData,
-            'lastUpdated': FieldValue.serverTimestamp(),
-          });
+      await _supabase.from('trips').update({
+        'last_updated': DateTime.now().toIso8601String(),
+      }).eq('id', _activeTripId!);
 
       notifyListeners();
 
-      // Only notify group members if user is a leader
       if (_isLeader) {
         await _notifyGroupMembers(groupCode, 'point_removed', {
           'pointId': pointId,
@@ -356,10 +365,8 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Add break point
   Future<bool> addBreakPoint(String groupCode, TripPoint breakPoint) async {
     try {
-      // Ensure break point has correct type
       final point = TripPoint(
         id: breakPoint.id,
         name: breakPoint.name,
@@ -379,24 +386,37 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Set selected route
   Future<bool> setSelectedRoute(String groupCode, TripRoute route) async {
     try {
+      if (_activeTripId == null) {
+        _error = 'No active trip';
+        return false;
+      }
+
+      // Deselect all existing routes
+      await _supabase
+          .from('trip_routes')
+          .update({'is_selected': false})
+          .eq('trip_id', _activeTripId!);
+
+      // Insert or update the selected route
+      await _supabase.from('trip_routes').upsert({
+        'trip_id': _activeTripId,
+        'name': route.name,
+        'polyline': route.polyline,
+        'distance': route.distance,
+        'duration': route.duration,
+        'is_selected': true,
+      });
+
       _selectedRoute = route;
 
-      await _firestore
-          .collection('groups')
-          .doc(groupCode)
-          .collection('trip')
-          .doc('current')
-          .update({
-            'selectedRoute': route.toMap(),
-            'lastUpdated': FieldValue.serverTimestamp(),
-          });
+      await _supabase.from('trips').update({
+        'last_updated': DateTime.now().toIso8601String(),
+      }).eq('id', _activeTripId!);
 
       notifyListeners();
 
-      // Only notify group members if user is a leader
       if (_isLeader) {
         await _notifyGroupMembers(groupCode, 'route_selected', {
           'route': route.toMap(),
@@ -413,7 +433,6 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Start trip
   Future<bool> startTrip(String groupCode) async {
     try {
       if (startPoint == null || endPoint == null) {
@@ -422,21 +441,20 @@ class TripProvider extends ChangeNotifier {
         return false;
       }
 
-      await _firestore
-          .collection('groups')
-          .doc(groupCode)
-          .collection('trip')
-          .doc('current')
-          .update({
-            'status': 'active',
-            'startedAt': FieldValue.serverTimestamp(),
-            'lastUpdated': FieldValue.serverTimestamp(),
-          });
+      if (_activeTripId == null) {
+        _error = 'No active trip';
+        return false;
+      }
+
+      await _supabase.from('trips').update({
+        'status': 'active',
+        'started_at': DateTime.now().toIso8601String(),
+        'last_updated': DateTime.now().toIso8601String(),
+      }).eq('id', _activeTripId!);
 
       _tripData?['status'] = 'active';
       notifyListeners();
 
-      // Only notify group members if user is a leader
       if (_isLeader) {
         await _notifyGroupMembers(groupCode, 'trip_started', {
           'message': 'Trip has started!',
@@ -454,24 +472,22 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Complete trip
   Future<bool> completeTrip(String groupCode) async {
     try {
-      await _firestore
-          .collection('groups')
-          .doc(groupCode)
-          .collection('trip')
-          .doc('current')
-          .update({
-            'status': 'completed',
-            'completedAt': FieldValue.serverTimestamp(),
-            'lastUpdated': FieldValue.serverTimestamp(),
-          });
+      if (_activeTripId == null) {
+        _error = 'No active trip';
+        return false;
+      }
+
+      await _supabase.from('trips').update({
+        'status': 'completed',
+        'completed_at': DateTime.now().toIso8601String(),
+        'last_updated': DateTime.now().toIso8601String(),
+      }).eq('id', _activeTripId!);
 
       _tripData?['status'] = 'completed';
       notifyListeners();
 
-      // Only notify group members if user is a leader
       if (_isLeader) {
         await _notifyGroupMembers(groupCode, 'trip_completed', {
           'message': 'Trip completed!',
@@ -487,24 +503,21 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Cancel trip
   Future<bool> cancelTrip(String groupCode) async {
     try {
-      await _firestore
-          .collection('groups')
-          .doc(groupCode)
-          .collection('trip')
-          .doc('current')
-          .update({
-            'status': 'cancelled',
-            'cancelledAt': FieldValue.serverTimestamp(),
-            'lastUpdated': FieldValue.serverTimestamp(),
-          });
+      if (_activeTripId == null) {
+        _error = 'No active trip';
+        return false;
+      }
+
+      await _supabase.from('trips').update({
+        'status': 'cancelled',
+        'last_updated': DateTime.now().toIso8601String(),
+      }).eq('id', _activeTripId!);
 
       _tripData?['status'] = 'cancelled';
       notifyListeners();
 
-      // Only notify group members if user is a leader
       if (_isLeader) {
         await _notifyGroupMembers(groupCode, 'trip_cancelled', {
           'message': 'Trip cancelled',
@@ -520,25 +533,21 @@ class TripProvider extends ChangeNotifier {
     }
   }
 
-  // Notify group members
   Future<void> _notifyGroupMembers(
     String groupCode,
     String type,
     Map<String, dynamic> data,
   ) async {
     try {
-      final notification = {
-        'type': type,
-        'data': data,
-        'timestamp': FieldValue.serverTimestamp(),
-        'createdBy': _auth.currentUser?.uid,
-      };
+      final userId = await _getCurrentUserId();
 
-      await _firestore
-          .collection('groups')
-          .doc(groupCode)
-          .collection('notifications')
-          .add(notification);
+      await _supabase.from('trip_notifications').insert({
+        'group_code': groupCode,
+        'notification_type': type,
+        'data': data,
+        'created_by': userId,
+        'created_at': DateTime.now().toIso8601String(),
+      });
     } catch (e) {
       debugPrint('Error notifying group members: $e');
     }

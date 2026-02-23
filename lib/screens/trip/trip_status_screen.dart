@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:flutter/foundation.dart';
 import '../../providers/trip_provider.dart';
 import '../../core/services/haptic_service.dart';
 import '../../core/services/location_permission_manager.dart';
@@ -623,17 +622,17 @@ class _TripStatusScreenState extends State<TripStatusScreen> {
                                   padding: EdgeInsets.all(8),
                                   decoration: BoxDecoration(
                                     color: _distanceToStart! > 5000
-                                        ? Colors.red.withOpacity(0.1)
+                                        ? Colors.red.withValues(alpha: 0.1)
                                         : _distanceToStart! > 1000
-                                        ? Colors.orange.withOpacity(0.1)
-                                        : Colors.green.withOpacity(0.1),
+                                        ? Colors.orange.withValues(alpha: 0.1)
+                                        : Colors.green.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
                                       color: _distanceToStart! > 5000
-                                          ? Colors.red.withOpacity(0.3)
+                                          ? Colors.red.withValues(alpha: 0.3)
                                           : _distanceToStart! > 1000
-                                          ? Colors.orange.withOpacity(0.3)
-                                          : Colors.green.withOpacity(0.3),
+                                          ? Colors.orange.withValues(alpha: 0.3)
+                                          : Colors.green.withValues(alpha: 0.3),
                                     ),
                                   ),
                                   child: Row(
@@ -810,10 +809,10 @@ class _TripStatusScreenState extends State<TripStatusScreen> {
                             Container(
                               padding: EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: AppColors.warning.withOpacity(0.1),
+                                color: AppColors.warning.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: AppColors.warning.withOpacity(0.3),
+                                  color: AppColors.warning.withValues(alpha: 0.3),
                                 ),
                               ),
                               child: Row(
@@ -971,7 +970,7 @@ class _TripStatusScreenState extends State<TripStatusScreen> {
             Container(
               padding: EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(icon, color: color, size: 24),
@@ -1000,12 +999,11 @@ class _TripStatusScreenState extends State<TripStatusScreen> {
   }
 
   Widget _buildBreakPointTile(BuildContext context, TripPoint point) {
-    final theme = Theme.of(context);
     return ListTile(
       leading: Container(
         padding: EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: Colors.orange.withOpacity(0.1),
+          color: Colors.orange.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(Icons.coffee, color: Colors.orange, size: 20),

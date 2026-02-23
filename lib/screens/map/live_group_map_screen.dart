@@ -5,8 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter_compass/flutter_compass.dart'; // Add compass support
+import 'package:flutter_compass/flutter_compass.dart';
 import '../../providers/group_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/services/haptic_service.dart';
@@ -14,15 +13,12 @@ import '../../core/services/live_group_tracking.dart';
 import '../../core/services/location_permission_manager.dart';
 import '../../core/services/mid_journey_detection_service.dart';
 import '../../core/theme/app_colors.dart';
-import '../../widgets/location_permission_dialog.dart';
 import '../../widgets/map_markers.dart';
 import '../../widgets/mid_journey_join_dialog.dart';
 import '../../providers/trip_provider.dart';
-import '../trip/meeting_point_suggestions_screen.dart';
-import 'dart:convert'; // Added for json
-import 'package:http/http.dart' as http; // Added for http
-import 'dart:async'; // Added for StreamSubscription
-import 'package:flutter_compass/flutter_compass.dart'; // Added for CompassEvent
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'dart:async';
 
 class LiveGroupMapScreen extends StatefulWidget {
   final String groupCode;
@@ -38,7 +34,6 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
   LatLng? _currentLocation;
   bool _isLoading = true;
   String? _error;
-  bool _hasLocationPermission = false;
   bool _isSharingLocation = false;
   List<Marker> _memberMarkers = [];  // For clustering (group members)
   List<Marker> _tripPointMarkers = []; // No clustering (start/end/break points)
@@ -64,62 +59,8 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
   // Direction tracking
   double? _currentHeading;
   StreamSubscription<Position>? _locationSubscription;
-  StreamSubscription<CompassEvent>?
-  _compassSubscription; // Add compass subscription
-  String? _currentDirection; // Add cardinal direction tracking
-  bool _compassNeedsCalibration = false; // Add calibration status
-
-  /// Convert heading degrees to cardinal direction
-  String _getCardinalDirection(double heading) {
-    // Normalize heading to 0-360 degrees
-    double normalizedHeading = heading % 360;
-    if (normalizedHeading < 0) normalizedHeading += 360;
-
-    // Define cardinal directions with their degree ranges
-    if (normalizedHeading >= 337.5 || normalizedHeading < 22.5) {
-      return 'North';
-    } else if (normalizedHeading >= 22.5 && normalizedHeading < 67.5) {
-      return 'Northeast';
-    } else if (normalizedHeading >= 67.5 && normalizedHeading < 112.5) {
-      return 'East';
-    } else if (normalizedHeading >= 112.5 && normalizedHeading < 157.5) {
-      return 'Southeast';
-    } else if (normalizedHeading >= 157.5 && normalizedHeading < 202.5) {
-      return 'South';
-    } else if (normalizedHeading >= 202.5 && normalizedHeading < 247.5) {
-      return 'Southwest';
-    } else if (normalizedHeading >= 247.5 && normalizedHeading < 292.5) {
-      return 'West';
-    } else if (normalizedHeading >= 292.5 && normalizedHeading < 337.5) {
-      return 'Northwest';
-    } else {
-      return 'North';
-    }
-  }
-
-  /// Get short direction format (N, NE, E, SE, S, SW, W, NW)
-  String _getShortDirection(String fullDirection) {
-    switch (fullDirection) {
-      case 'North':
-        return 'N';
-      case 'Northeast':
-        return 'NE';
-      case 'East':
-        return 'E';
-      case 'Southeast':
-        return 'SE';
-      case 'South':
-        return 'S';
-      case 'Southwest':
-        return 'SW';
-      case 'West':
-        return 'W';
-      case 'Northwest':
-        return 'NW';
-      default:
-        return 'N';
-    }
-  }
+  StreamSubscription<CompassEvent>? _compassSubscription;
+  bool _compassNeedsCalibration = false;
 
   /// Show compass calibration guidance
   void _showCalibrationGuidance() {
@@ -147,7 +88,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
             Container(
               padding: EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
+                color: Colors.orange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
@@ -227,7 +168,6 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
       );
 
       setState(() {
-        _hasLocationPermission = hasPermission;
         _isLoading = false;
       });
 
@@ -284,7 +224,6 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
       setState(() {
         _currentLocation = LatLng(position.latitude, position.longitude);
         _currentHeading = position.heading;
-        _currentDirection = _getCardinalDirection(_currentHeading!);
         _isLoading = false;
       });
 
@@ -345,9 +284,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
 
           setState(() {
             _currentHeading = event.heading;
-            _currentDirection = _getCardinalDirection(event.heading!);
-            _compassNeedsCalibration =
-                false; // Reset calibration flag when we get data
+            _compassNeedsCalibration = false;
           });
         } else {
           // Handle calibration issues
@@ -479,8 +416,8 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
     _tripPointMarkers.clear();
 
     final tripProvider = Provider.of<TripProvider>(context, listen: false);
-    final currentUser = Provider.of<AuthProvider>(context, listen: false).user;
-    final currentUserId = currentUser?.uid;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.userId;
 
     // Track which users are already represented by member markers
     Set<String> usersWithMarkers = {};
@@ -560,7 +497,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
           _routePolylines = [
             Polyline(
               points: points,
-              color: AppColors.primary.withOpacity(0.7),
+              color: AppColors.primary.withValues(alpha: 0.7),
               strokeWidth: 4,
             ),
           ];
@@ -846,8 +783,8 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
             _directionsToStartPolylines = [
               Polyline(
                 points: points,
-                color: Colors.blue.withOpacity(
-                  0.8,
+                color: Colors.blue.withValues(
+                  alpha: 0.8,
                 ), // Changed from orange to blue
                 strokeWidth: 3,
               ),
@@ -864,23 +801,10 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
     }
   }
 
-  Future<void> _showMeetingPointSuggestions() async {
-    // Only show meeting point suggestions if someone joins on the way
-    // For now, this feature is disabled
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Meeting point suggestions will be available when members join on the way',
-        ),
-        backgroundColor: AppColors.primary,
-      ),
-    );
-  }
-
   void _checkLocationSharingStatus() {
     // Check if user is already sharing location
-    final currentUser = Provider.of<AuthProvider>(context, listen: false).user;
-    final currentUserId = currentUser?.uid;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.userId;
 
     if (currentUserId != null) {
       final isSharing =
@@ -1047,9 +971,9 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                                           value: _isSharingLocation,
                                           onChanged: (value) =>
                                               _toggleLocationSharing(),
-                                          activeColor: AppColors.primary,
+                                          activeThumbColor: AppColors.primary,
                                           activeTrackColor: AppColors.primary
-                                              .withOpacity(0.3),
+                                              .withValues(alpha: 0.3),
                                         ),
                                       ],
                                     ),
@@ -1063,13 +987,13 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                                   ),
                                   decoration: BoxDecoration(
                                     color: _isSharingLocation
-                                        ? Colors.green.withOpacity(0.1)
-                                        : Colors.grey.withOpacity(0.1),
+                                        ? Colors.green.withValues(alpha: 0.1)
+                                        : Colors.grey.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
                                       color: _isSharingLocation
-                                          ? Colors.green.withOpacity(0.3)
-                                          : Colors.grey.withOpacity(0.3),
+                                          ? Colors.green.withValues(alpha: 0.3)
+                                          : Colors.grey.withValues(alpha: 0.3),
                                     ),
                                   ),
                                   child: Row(
@@ -1162,14 +1086,14 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                                         (_routeToMeetingPoint != null
                                                 ? Colors.purple
                                                 : Colors.blue)
-                                            .withOpacity(0.1),
+                                            .withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
                                       color:
                                           (_routeToMeetingPoint != null
                                                   ? Colors.purple
                                                   : Colors.blue)
-                                              .withOpacity(0.3),
+                                              .withValues(alpha: 0.3),
                                     ),
                                   ),
                                   child: Row(
@@ -1317,7 +1241,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                                             ),
                                             boxShadow: [
                                               BoxShadow(
-                                                color: Colors.black.withOpacity(0.3),
+                                                color: Colors.black.withValues(alpha: 0.3),
                                                 blurRadius: 6,
                                                 offset: const Offset(0, 2),
                                               ),
@@ -1354,7 +1278,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                                     width: 40,
                                     height: 40,
                                     decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.9),
+                                      color: Colors.white.withValues(alpha: 0.9),
                                       shape: BoxShape.circle,
                                       border: Border.all(
                                         color: AppColors.primary,
@@ -1362,7 +1286,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                                       ),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withOpacity(0.2),
+                                          color: Colors.black.withValues(alpha: 0.2),
                                           blurRadius: 4,
                                           offset: Offset(0, 2),
                                         ),
@@ -1393,10 +1317,10 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                                     ),
                                     decoration: BoxDecoration(
                                       color: _compassNeedsCalibration
-                                          ? Colors.orange.withOpacity(0.8)
+                                          ? Colors.orange.withValues(alpha: 0.8)
                                           : FlutterCompass.events != null
-                                          ? Colors.green.withOpacity(0.8)
-                                          : Colors.red.withOpacity(0.8),
+                                          ? Colors.green.withValues(alpha: 0.8)
+                                          : Colors.red.withValues(alpha: 0.8),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Row(
@@ -1467,7 +1391,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                                             Provider.of<AuthProvider>(
                                               context,
                                               listen: false,
-                                            ).user?.uid;
+                                            ).userId;
                                         final memberColor =
                                             MapMarkers.getMemberColor(
                                               member.userId,
@@ -1632,7 +1556,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [AppColors.primary.withOpacity(0.1), Colors.white],
+          colors: [AppColors.primary.withValues(alpha: 0.1), Colors.white],
         ),
       ),
       child: Center(
@@ -1650,10 +1574,10 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                     width: 120,
                     height: 120,
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
+                      color: AppColors.primary.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: AppColors.primary.withOpacity(0.3),
+                        color: AppColors.primary.withValues(alpha: 0.3),
                         width: 2,
                       ),
                     ),
@@ -1679,10 +1603,10 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
+                        color: AppColors.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: AppColors.primary.withOpacity(0.3),
+                          color: AppColors.primary.withValues(alpha: 0.3),
                         ),
                       ),
                       child: Row(
@@ -1726,8 +1650,8 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(
-                              0.3 + (0.7 * value),
+                            color: AppColors.primary.withValues(
+                              alpha: 0.3 + (0.7 * value),
                             ),
                             shape: BoxShape.circle,
                           ),
@@ -1785,7 +1709,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [AppColors.primary.withOpacity(0.1), Colors.white],
+          colors: [AppColors.primary.withValues(alpha: 0.1), Colors.white],
         ),
       ),
       child: Center(
@@ -1803,10 +1727,10 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
                     width: 100,
                     height: 100,
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
+                      color: AppColors.primary.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: AppColors.primary.withOpacity(0.3),
+                        color: AppColors.primary.withValues(alpha: 0.3),
                         width: 2,
                       ),
                     ),
@@ -1888,7 +1812,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
       polylines.add(
         Polyline(
           points: _routeToMeetingPoint!.points,
-          color: Colors.purple.withOpacity(0.8),
+          color: Colors.purple.withValues(alpha: 0.8),
           strokeWidth: 4,
         ),
       );
@@ -1898,7 +1822,7 @@ class _LiveGroupMapScreenState extends State<LiveGroupMapScreen>
       polylines.add(
         Polyline(
           points: _routeToStart!.points,
-          color: Colors.blue.withOpacity(0.8),
+          color: Colors.blue.withValues(alpha: 0.8),
           strokeWidth: 4,
         ),
       );

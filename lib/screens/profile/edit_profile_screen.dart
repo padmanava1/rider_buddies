@@ -71,6 +71,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.primary,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -78,7 +79,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
             end: Alignment.bottomCenter,
             colors: [
               AppColors.primary,
-              AppColors.primary.withOpacity(0.8),
+              AppColors.primary.withValues(alpha: 0.8),
               AppColors.secondary,
             ],
           ),
@@ -127,7 +128,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
+                            color: Colors.black.withValues(alpha: 0.1),
                             blurRadius: 20,
                             offset: Offset(0, 10),
                           ),
@@ -182,8 +183,8 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                                         width: 120,
                                         height: 120,
                                         decoration: BoxDecoration(
-                                          color: AppColors.primary.withOpacity(
-                                            0.1,
+                                          color: AppColors.primary.withValues(
+                                            alpha: 0.1,
                                           ),
                                           shape: BoxShape.circle,
                                           border: Border.all(

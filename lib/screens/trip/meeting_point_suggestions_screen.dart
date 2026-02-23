@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../../providers/trip_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/services/intelligent_meeting_service.dart';
-import '../../core/services/haptic_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/services/live_group_tracking.dart';
 import '../../widgets/map_markers.dart';
@@ -96,7 +95,7 @@ class _MeetingPointSuggestionsScreenState
       // Add other group members' locations
       for (final member in trackingService.memberLocations) {
         // Don't add current user twice
-        if (member.userId != authProvider.user?.uid) {
+        if (member.userId != authProvider.userId) {
           memberLocations.add(member.coordinates);
         }
       }
@@ -259,10 +258,6 @@ class _MeetingPointSuggestionsScreenState
             icon: Icon(Icons.bug_report),
             onPressed: () {
               final trackingService = Provider.of<LiveGroupTracking>(
-                context,
-                listen: false,
-              );
-              final authProvider = Provider.of<AuthProvider>(
                 context,
                 listen: false,
               );
@@ -434,13 +429,13 @@ class _MeetingPointSuggestionsScreenState
                                 margin: EdgeInsets.only(bottom: 8),
                                 elevation: isSelected ? 4 : 2,
                                 color: isSelected
-                                    ? AppColors.primary.withOpacity(0.1)
+                                    ? AppColors.primary.withValues(alpha: 0.1)
                                     : null,
                                 child: ListTile(
                                   leading: Container(
                                     padding: EdgeInsets.all(8),
                                     decoration: BoxDecoration(
-                                      color: AppColors.primary.withOpacity(0.1),
+                                      color: AppColors.primary.withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Icon(
@@ -558,7 +553,7 @@ class _MeetingPointSuggestionsScreenState
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
     return trackingService.memberLocations.map((member) {
-      final isCurrentUser = member.userId == authProvider.user?.uid;
+      final isCurrentUser = member.userId == authProvider.userId;
       return MapMarkers.buildMemberMarker(member, isCurrentUser: isCurrentUser);
     }).toList();
   }

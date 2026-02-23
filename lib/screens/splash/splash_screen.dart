@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
 import '../../core/constants/assets.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/services/location_permission_manager.dart';
 import '../auth/login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
+  final bool autoNavigate;
+
+  const SplashScreen({super.key, this.autoNavigate = true});
+
   @override
   _SplashScreenState createState() => _SplashScreenState();
 }
@@ -36,6 +41,9 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _initializeApp() async {
+    // Skip initialization and navigation if autoNavigate is false
+    if (!widget.autoNavigate) return;
+
     try {
       // Initialize location permission manager
       await LocationPermissionManager.initialize();
@@ -46,7 +54,13 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => LoginScreen()),
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => LoginScreen(),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+            transitionDuration: Duration(milliseconds: 300),
+          ),
         );
       }
     } catch (e) {
@@ -55,7 +69,13 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => LoginScreen()),
+          PageRouteBuilder(
+            pageBuilder: (context, animation, secondaryAnimation) => LoginScreen(),
+            transitionsBuilder: (context, animation, secondaryAnimation, child) {
+              return FadeTransition(opacity: animation, child: child);
+            },
+            transitionDuration: Duration(milliseconds: 300),
+          ),
         );
       }
     }
@@ -70,28 +90,58 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return Transform.scale(
-              scale: _scaleAnimation.value,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Opacity(
-                    opacity: _raysOpacity.value,
-                    child: CustomPaint(
-                      size: Size(300, 300),
-                      painter: _RaysPainter(),
+      backgroundColor: AppColors.primary,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppColors.primary,
+              AppColors.primary.withValues(alpha: 0.8),
+              AppColors.secondary,
+            ],
+          ),
+        ),
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              return Transform.scale(
+                scale: _scaleAnimation.value,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Opacity(
+                      opacity: _raysOpacity.value,
+                      child: CustomPaint(
+                        size: Size(300, 300),
+                        painter: _RaysPainter(),
+                      ),
                     ),
-                  ),
-                  Image.asset(AppAssets.logo, width: 220, height: 220),
-                ],
-              ),
-            );
-          },
+                    Container(
+                      width: 220,
+                      height: 220,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 20,
+                            offset: Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: Image.asset(AppAssets.logo, width: 220, height: 220),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -102,7 +152,7 @@ class _RaysPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final Paint paint = Paint()
-      ..color = Colors.amber.withOpacity(0.3)
+      ..color = Colors.white.withValues(alpha: 0.3)
       ..strokeWidth = 3;
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2 - 10;

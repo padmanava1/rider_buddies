@@ -4,12 +4,75 @@ import 'package:geocoding/geocoding.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:async';
+import '../config/env_config.dart';
+
+/// Cache entry with TTL support
+class _CacheEntry<T> {
+  final T data;
+  final DateTime createdAt;
+  final Duration ttl;
+
+  _CacheEntry({
+    required this.data,
+    required this.ttl,
+  }) : createdAt = DateTime.now();
+
+  bool get isExpired => DateTime.now().difference(createdAt) > ttl;
+}
+
+/// Rate limiter to prevent API abuse
+class _RateLimiter {
+  final int maxRequests;
+  final Duration window;
+  final List<DateTime> _requests = [];
+
+  _RateLimiter({
+    this.maxRequests = 10,
+    this.window = const Duration(seconds: 60),
+  });
+
+  bool get canMakeRequest {
+    _cleanOldRequests();
+    return _requests.length < maxRequests;
+  }
+
+  void recordRequest() {
+    _cleanOldRequests();
+    _requests.add(DateTime.now());
+  }
+
+  void _cleanOldRequests() {
+    final cutoff = DateTime.now().subtract(window);
+    _requests.removeWhere((time) => time.isBefore(cutoff));
+  }
+
+  int get remainingRequests {
+    _cleanOldRequests();
+    return maxRequests - _requests.length;
+  }
+}
 
 class OlaMapsService {
   // Ola Maps API Configuration
   static const String _baseUrl = 'https://api.olamaps.io';
-  static const String _apiKey =
-      '64eM9Zrb7p3kgvZqUwJbx1bJfNawEBccRTEpwPYj'; // Your API key
+  static String get _apiKey => EnvConfig.olaMapsApiKey;
+
+  // Cache configuration
+  static final Map<String, _CacheEntry<dynamic>> _cache = {};
+  static const Duration _searchCacheTTL = Duration(minutes: 5);
+  static const Duration _placeDetailsCacheTTL = Duration(minutes: 30);
+  static const Duration _routeCacheTTL = Duration(minutes: 10);
+
+  // Rate limiter (10 requests per minute)
+  static final _RateLimiter _rateLimiter = _RateLimiter(
+    maxRequests: 10,
+    window: const Duration(seconds: 60),
+  );
+
+  // Debounce timer for search
+  static Timer? _searchDebounceTimer;
+  static Completer<List<Map<String, dynamic>>>? _searchCompleter;
 
   // API Headers
   static Map<String, String> get _headers => {
@@ -18,11 +81,98 @@ class OlaMapsService {
     'User-Agent': 'RideBuddies/1.0',
   };
 
+  /// Clear all cached data
+  static void clearCache() {
+    _cache.clear();
+    debugPrint('Ola Maps cache cleared');
+  }
+
+  /// Clear expired cache entries
+  static void _cleanExpiredCache() {
+    _cache.removeWhere((key, entry) => entry.isExpired);
+  }
+
+  /// Get cached data or null if not found/expired
+  static T? _getCached<T>(String key) {
+    _cleanExpiredCache();
+    final entry = _cache[key];
+    if (entry != null && !entry.isExpired) {
+      debugPrint('Cache HIT for: $key');
+      return entry.data as T;
+    }
+    debugPrint('Cache MISS for: $key');
+    return null;
+  }
+
+  /// Store data in cache
+  static void _setCache<T>(String key, T data, Duration ttl) {
+    _cache[key] = _CacheEntry<T>(data: data, ttl: ttl);
+    debugPrint('Cached: $key (TTL: ${ttl.inMinutes} min)');
+  }
+
+  /// Check rate limit before making API request
+  static bool _checkRateLimit() {
+    if (!_rateLimiter.canMakeRequest) {
+      debugPrint('Rate limit exceeded. Remaining: ${_rateLimiter.remainingRequests}');
+      return false;
+    }
+    return true;
+  }
+
+  /// Record an API request for rate limiting
+  static void _recordRequest() {
+    _rateLimiter.recordRequest();
+    debugPrint('API request recorded. Remaining: ${_rateLimiter.remainingRequests}');
+  }
+
+  /// Debounced search for places - waits 500ms after last keystroke
+  /// Use this in UI for real-time search as user types
+  static Future<List<Map<String, dynamic>>> searchPlacesDebounced(String query) async {
+    // Cancel any pending search
+    _searchDebounceTimer?.cancel();
+    _searchCompleter?.completeError('Cancelled');
+
+    // Create new completer for this search
+    _searchCompleter = Completer<List<Map<String, dynamic>>>();
+    final completer = _searchCompleter!;
+
+    // Start debounce timer
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () async {
+      if (completer.isCompleted) return;
+
+      try {
+        final results = await searchPlaces(query);
+        if (!completer.isCompleted) {
+          completer.complete(results);
+        }
+      } catch (e) {
+        if (!completer.isCompleted) {
+          completer.completeError(e);
+        }
+      }
+    });
+
+    return completer.future;
+  }
+
   // Search for places using Ola Maps Places API
   static Future<List<Map<String, dynamic>>> searchPlaces(String query) async {
     try {
-      if (_apiKey == 'YOUR_OLA_MAPS_API_KEY') {
+      if (query.trim().isEmpty) return [];
+
+      // Check cache first
+      final cacheKey = 'search:${query.toLowerCase()}';
+      final cached = _getCached<List<Map<String, dynamic>>>(cacheKey);
+      if (cached != null) return cached;
+
+      if (_apiKey.isEmpty || _apiKey == 'YOUR_OLA_MAPS_API_KEY') {
         debugPrint('Ola Maps API key not configured, using fallback');
+        return _getFallbackSearchResults(query);
+      }
+
+      // Check rate limit
+      if (!_checkRateLimit()) {
+        debugPrint('Rate limited, using fallback');
         return _getFallbackSearchResults(query);
       }
 
@@ -36,16 +186,20 @@ class OlaMapsService {
         headers: _headers,
       );
 
+      _recordRequest();
+
       debugPrint(
         'Ola Maps API Response Status:  [32m${response.statusCode} [0m',
-      );
-      debugPrint(
-        'Ola Maps API Response Body: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}',
       );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return _parseAutocompleteResults(data);
+        final results = _parseAutocompleteResults(data);
+
+        // Cache the results
+        _setCache(cacheKey, results, _searchCacheTTL);
+
+        return results;
       } else {
         debugPrint(
           'Ola Maps API error: ${response.statusCode} - ${response.body}',
@@ -63,8 +217,19 @@ class OlaMapsService {
     String placeId,
   ) async {
     try {
-      if (_apiKey == 'YOUR_OLA_MAPS_API_KEY') {
+      // Check cache first
+      final cacheKey = 'place_details:$placeId';
+      final cached = _getCached<Map<String, dynamic>>(cacheKey);
+      if (cached != null) return cached;
+
+      if (_apiKey.isEmpty || _apiKey == 'YOUR_OLA_MAPS_API_KEY') {
         debugPrint('Ola Maps API key not configured, using fallback');
+        return null;
+      }
+
+      // Check rate limit
+      if (!_checkRateLimit()) {
+        debugPrint('Rate limited for place details');
         return null;
       }
 
@@ -77,11 +242,20 @@ class OlaMapsService {
         headers: _headers,
       );
 
+      _recordRequest();
+
       debugPrint('Place Details API Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return _parsePlaceDetailsResponse(data);
+        final result = _parsePlaceDetailsResponse(data);
+
+        // Cache the results
+        if (result != null) {
+          _setCache(cacheKey, result, _placeDetailsCacheTTL);
+        }
+
+        return result;
       } else {
         debugPrint(
           'Place Details API error: ${response.statusCode} - ${response.body}',
@@ -139,8 +313,19 @@ class OlaMapsService {
     String? keyword,
   }) async {
     try {
-      if (_apiKey == 'YOUR_OLA_MAPS_API_KEY') {
+      // Check cache first
+      final cacheKey = 'nearby:${location.latitude},${location.longitude}:$type:$radius:$keyword';
+      final cached = _getCached<List<Map<String, dynamic>>>(cacheKey);
+      if (cached != null) return cached;
+
+      if (_apiKey.isEmpty || _apiKey == 'YOUR_OLA_MAPS_API_KEY') {
         debugPrint('Ola Maps API key not configured, using fallback');
+        return [];
+      }
+
+      // Check rate limit
+      if (!_checkRateLimit()) {
+        debugPrint('Rate limited for nearby search');
         return [];
       }
 
@@ -163,11 +348,18 @@ class OlaMapsService {
 
       final response = await http.get(uri, headers: _headers);
 
+      _recordRequest();
+
       debugPrint('Nearby Search API Response Status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return _parseNearbySearchResults(data);
+        final results = _parseNearbySearchResults(data);
+
+        // Cache the results
+        _setCache(cacheKey, results, _searchCacheTTL);
+
+        return results;
       } else {
         debugPrint(
           'Nearby Search API error: ${response.statusCode} - ${response.body}',
@@ -208,64 +400,6 @@ class OlaMapsService {
       }).toList();
     } catch (e) {
       debugPrint('Error parsing nearby search results: $e');
-      return [];
-    }
-  }
-
-  // Try autocomplete search as fallback
-  static Future<List<Map<String, dynamic>>> _tryAutocompleteSearch(
-    String query,
-  ) async {
-    try {
-      debugPrint('Trying autocomplete search...');
-
-      final response = await http.get(
-        Uri.parse(
-          '$_baseUrl/places/v1/autocomplete?input=${Uri.encodeComponent(query)}&api_key=$_apiKey',
-        ),
-        headers: _headers,
-      );
-
-      debugPrint('Autocomplete API Response Status: ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return _parseAutocompleteResults(data);
-      } else {
-        debugPrint('Autocomplete API also failed: ${response.statusCode}');
-        return _getFallbackSearchResults(query);
-      }
-    } catch (e) {
-      debugPrint('Autocomplete search error: $e');
-      return _getFallbackSearchResults(query);
-    }
-  }
-
-  // Parse places search results from Ola Maps API
-  static List<Map<String, dynamic>> _parsePlacesSearchResults(
-    Map<String, dynamic> data,
-  ) {
-    try {
-      final predictions = data['predictions'] as List?;
-      if (predictions == null) return [];
-
-      return predictions.map((prediction) {
-        final geometry = prediction['geometry'];
-        final location = geometry?['location'];
-
-        return {
-          'name': prediction['name'] ?? 'Unknown Location',
-          'address': prediction['formatted_address'] ?? '',
-          'coordinates': location != null
-              ? LatLng(location['lat'].toDouble(), location['lng'].toDouble())
-              : LatLng(0, 0),
-          'place_id': prediction['place_id'] ?? '',
-          'types': prediction['types'] ?? [],
-          'source': 'Ola Maps',
-        };
-      }).toList();
-    } catch (e) {
-      debugPrint('Error parsing places search results: $e');
       return [];
     }
   }
@@ -353,8 +487,19 @@ class OlaMapsService {
     LatLng coordinates,
   ) async {
     try {
-      if (_apiKey == 'YOUR_OLA_MAPS_API_KEY') {
+      // Check cache first
+      final cacheKey = 'reverse:${coordinates.latitude.toStringAsFixed(5)},${coordinates.longitude.toStringAsFixed(5)}';
+      final cached = _getCached<Map<String, dynamic>>(cacheKey);
+      if (cached != null) return cached;
+
+      if (_apiKey.isEmpty || _apiKey == 'YOUR_OLA_MAPS_API_KEY') {
         debugPrint('Ola Maps API key not configured, using fallback');
+        return _getFallbackPlaceDetails(coordinates);
+      }
+
+      // Check rate limit
+      if (!_checkRateLimit()) {
+        debugPrint('Rate limited for reverse geocoding');
         return _getFallbackPlaceDetails(coordinates);
       }
 
@@ -365,9 +510,18 @@ class OlaMapsService {
         headers: _headers,
       );
 
+      _recordRequest();
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return _parseReverseGeocodeResults(data, coordinates);
+        final result = _parseReverseGeocodeResults(data, coordinates);
+
+        // Cache the results
+        if (result != null) {
+          _setCache(cacheKey, result, _placeDetailsCacheTTL);
+        }
+
+        return result;
       } else {
         debugPrint(
           'Ola Maps reverse geocoding error: ${response.statusCode} - ${response.body}',
@@ -390,8 +544,6 @@ class OlaMapsService {
       if (results == null || results.isEmpty) return null;
 
       final result = results[0];
-      final geometry = result['geometry'];
-      final location = geometry?['location'];
 
       return {
         'name': result['name'] ?? 'Unknown Location',
@@ -447,8 +599,19 @@ class OlaMapsService {
     String profile = 'driving',
   }) async {
     try {
-      if (_apiKey == 'YOUR_OLA_MAPS_API_KEY') {
+      // Check cache first
+      final cacheKey = 'route:${start.latitude},${start.longitude}:${end.latitude},${end.longitude}:$profile';
+      final cached = _getCached<Map<String, dynamic>>(cacheKey);
+      if (cached != null) return cached;
+
+      if (_apiKey.isEmpty || _apiKey == 'YOUR_OLA_MAPS_API_KEY') {
         debugPrint('Ola Maps API key not configured, using fallback');
+        return _getFallbackRoute(start, end, profile);
+      }
+
+      // Check rate limit
+      if (!_checkRateLimit()) {
+        debugPrint('Rate limited for routing');
         return _getFallbackRoute(start, end, profile);
       }
 
@@ -459,9 +622,18 @@ class OlaMapsService {
         headers: _headers,
       );
 
+      _recordRequest();
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return _parseDirectionsResponse(data);
+        final result = _parseDirectionsResponse(data);
+
+        // Cache the results
+        if (result != null) {
+          _setCache(cacheKey, result, _routeCacheTTL);
+        }
+
+        return result;
       } else {
         debugPrint(
           'Ola Maps routing error: ${response.statusCode} - ${response.body}',
@@ -570,12 +742,18 @@ class OlaMapsService {
   // Snap GPS coordinates to the nearest road
   static Future<List<LatLng>> snapToRoad(List<LatLng> coordinates) async {
     try {
-      if (_apiKey == 'YOUR_OLA_MAPS_API_KEY') {
+      if (_apiKey.isEmpty || _apiKey == 'YOUR_OLA_MAPS_API_KEY') {
         debugPrint('Ola Maps API key not configured, using fallback');
         return coordinates; // Return original coordinates as fallback
       }
 
       if (coordinates.isEmpty) return [];
+
+      // Check rate limit
+      if (!_checkRateLimit()) {
+        debugPrint('Rate limited for snap to road');
+        return coordinates;
+      }
 
       debugPrint('Snapping ${coordinates.length} coordinates to road');
 
@@ -590,6 +768,8 @@ class OlaMapsService {
         ),
         headers: _headers,
       );
+
+      _recordRequest();
 
       debugPrint('SnapToRoad API Response Status: ${response.statusCode}');
 
@@ -634,8 +814,14 @@ class OlaMapsService {
     List<LatLng> waypoints,
   ) async {
     try {
-      if (_apiKey == 'YOUR_OLA_MAPS_API_KEY') {
+      if (_apiKey.isEmpty || _apiKey == 'YOUR_OLA_MAPS_API_KEY') {
         debugPrint('Ola Maps API key not configured, using fallback');
+        return _getFallbackOptimizedRoute(start, end, waypoints);
+      }
+
+      // Check rate limit
+      if (!_checkRateLimit()) {
+        debugPrint('Rate limited for route optimization');
         return _getFallbackOptimizedRoute(start, end, waypoints);
       }
 
@@ -651,6 +837,8 @@ class OlaMapsService {
         ),
         headers: _headers,
       );
+
+      _recordRequest();
 
       debugPrint('Route Optimizer API Response Status: ${response.statusCode}');
 
@@ -764,12 +952,18 @@ class OlaMapsService {
   // Get elevation data for locations
   static Future<List<double>> getElevation(List<LatLng> locations) async {
     try {
-      if (_apiKey == 'YOUR_OLA_MAPS_API_KEY') {
+      if (_apiKey.isEmpty || _apiKey == 'YOUR_OLA_MAPS_API_KEY') {
         debugPrint('Ola Maps API key not configured, using fallback');
         return List.filled(
           locations.length,
           0.0,
         ); // Return zero elevation as fallback
+      }
+
+      // Check rate limit
+      if (!_checkRateLimit()) {
+        debugPrint('Rate limited for elevation');
+        return List.filled(locations.length, 0.0);
       }
 
       debugPrint('Getting elevation for ${locations.length} locations');
@@ -784,6 +978,8 @@ class OlaMapsService {
         ),
         headers: _headers,
       );
+
+      _recordRequest();
 
       debugPrint('Elevation API Response Status: ${response.statusCode}');
 
@@ -814,9 +1010,15 @@ class OlaMapsService {
     int samples,
   ) async {
     try {
-      if (_apiKey == 'YOUR_OLA_MAPS_API_KEY') {
+      if (_apiKey.isEmpty || _apiKey == 'YOUR_OLA_MAPS_API_KEY') {
         debugPrint('Ola Maps API key not configured, using fallback');
         return List.filled(samples, 0.0); // Return zero elevation as fallback
+      }
+
+      // Check rate limit
+      if (!_checkRateLimit()) {
+        debugPrint('Rate limited for elevation path');
+        return List.filled(samples, 0.0);
       }
 
       debugPrint('Getting elevation along path with $samples samples');
@@ -831,6 +1033,8 @@ class OlaMapsService {
         ),
         headers: _headers,
       );
+
+      _recordRequest();
 
       debugPrint('Elevation Path API Response Status: ${response.statusCode}');
 
@@ -868,7 +1072,7 @@ class OlaMapsService {
   }
 
   // Check if API key is configured
-  static bool get isConfigured => _apiKey != 'YOUR_OLA_MAPS_API_KEY';
+  static bool get isConfigured => _apiKey.isNotEmpty && _apiKey != 'YOUR_OLA_MAPS_API_KEY';
 
   // Get API configuration status
   static String get configurationStatus {
@@ -877,6 +1081,20 @@ class OlaMapsService {
     } else {
       return 'Ola Maps API key not configured. Please add your API key to use advanced features.';
     }
+  }
+
+  // Get rate limiter status
+  static String get rateLimiterStatus {
+    return 'Rate limit: ${_rateLimiter.remainingRequests}/${_rateLimiter.maxRequests} requests remaining';
+  }
+
+  // Get cache statistics
+  static Map<String, dynamic> get cacheStats {
+    _cleanExpiredCache();
+    return {
+      'entries': _cache.length,
+      'keys': _cache.keys.toList(),
+    };
   }
 
   // Test API connectivity
@@ -1003,5 +1221,7 @@ class OlaMapsService {
     debugPrint('Elevation: ${elevation.length} values');
 
     debugPrint('\n=== All API Tests Complete ===');
+    debugPrint('Cache stats: ${cacheStats}');
+    debugPrint('Rate limiter: $rateLimiterStatus');
   }
 }

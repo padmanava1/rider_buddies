@@ -21,6 +21,7 @@ class GroupMemberLocation {
     this.status,
   });
 
+  /// Factory for Firebase/Firestore format (legacy)
   factory GroupMemberLocation.fromMap(Map<String, dynamic> map) {
     return GroupMemberLocation(
       userId: map['userId'] ?? '',
@@ -33,6 +34,23 @@ class GroupMemberLocation {
       ),
       lastUpdated: map['lastUpdated']?.toDate() ?? DateTime.now(),
       isOnline: map['isOnline'] ?? true,
+      status: map['status'],
+    );
+  }
+
+  /// Factory for Supabase/PostgreSQL format
+  factory GroupMemberLocation.fromSupabaseMap(Map<String, dynamic> map) {
+    return GroupMemberLocation(
+      userId: map['user_id'] ?? '',
+      name: map['name'] ?? 'Unknown User',
+      profileImage: map['profile_image'],
+      email: map['email'],
+      coordinates: LatLng(
+        (map['latitude'] ?? 0.0).toDouble(),
+        (map['longitude'] ?? 0.0).toDouble(),
+      ),
+      lastUpdated: DateTime.tryParse(map['last_updated'] ?? '') ?? DateTime.now(),
+      isOnline: map['is_online'] ?? true,
       status: map['status'],
     );
   }
