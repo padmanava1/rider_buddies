@@ -235,7 +235,25 @@ class _LoginScreenState extends State<LoginScreen>
                                       return null;
                                     },
                                   ),
-                                  SizedBox(height: 30),
+                                  SizedBox(height: 12),
+                                  // Forgot Password Link
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        HapticService.selection();
+                                        _showForgotPasswordDialog();
+                                      },
+                                      child: Text(
+                                        'Forgot Password?',
+                                        style: TextStyle(
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(height: 20),
                                   // Login Button
                                   Consumer<AuthProvider>(
                                     builder: (context, authProvider, child) {
@@ -273,6 +291,57 @@ class _LoginScreenState extends State<LoginScreen>
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  SizedBox(height: 20),
+                                  // Divider with "or"
+                                  Row(
+                                    children: [
+                                      Expanded(child: Divider(color: Colors.grey.shade300)),
+                                      Padding(
+                                        padding: EdgeInsets.symmetric(horizontal: 16),
+                                        child: Text(
+                                          'or',
+                                          style: TextStyle(color: Colors.grey.shade500),
+                                        ),
+                                      ),
+                                      Expanded(child: Divider(color: Colors.grey.shade300)),
+                                    ],
+                                  ),
+                                  SizedBox(height: 20),
+                                  // Google Sign In Button
+                                  Consumer<AuthProvider>(
+                                    builder: (context, authProvider, child) {
+                                      return SizedBox(
+                                        width: double.infinity,
+                                        height: 56,
+                                        child: OutlinedButton.icon(
+                                          onPressed: authProvider.isLoading
+                                              ? null
+                                              : _handleGoogleSignIn,
+                                          icon: Image.network(
+                                            'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                                            height: 24,
+                                            width: 24,
+                                            errorBuilder: (context, error, stackTrace) =>
+                                                Icon(Icons.g_mobiledata, size: 24),
+                                          ),
+                                          label: Text(
+                                            'Continue with Google',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w500,
+                                              color: Colors.grey.shade700,
+                                            ),
+                                          ),
+                                          style: OutlinedButton.styleFrom(
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            side: BorderSide(color: Colors.grey.shade300),
+                                          ),
                                         ),
                                       );
                                     },
@@ -366,5 +435,129 @@ class _LoginScreenState extends State<LoginScreen>
         HapticService.error();
       }
     }
+  }
+
+  void _handleGoogleSignIn() async {
+    HapticService.mediumImpact();
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final success = await authProvider.signInWithGoogle();
+
+    if (success && mounted) {
+      HapticService.success();
+      Navigator.pushReplacementNamed(context, '/mode-selection');
+    } else if (authProvider.error != null) {
+      HapticService.error();
+    }
+  }
+
+  void _showForgotPasswordDialog() {
+    final resetEmailController = TextEditingController(
+      text: _emailController.text.trim(),
+    );
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.lock_reset, color: AppColors.primary),
+            SizedBox(width: 12),
+            Text('Reset Password'),
+          ],
+        ),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter your email address and we\'ll send you a link to reset your password.',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: resetEmailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: Icon(Icons.email_outlined),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter your email';
+                  }
+                  if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                      .hasMatch(value)) {
+                    return 'Please enter a valid email';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel'),
+          ),
+          Consumer<AuthProvider>(
+            builder: (context, authProvider, child) {
+              return ElevatedButton(
+                onPressed: authProvider.isLoading
+                    ? null
+                    : () async {
+                        if (formKey.currentState!.validate()) {
+                          final success = await authProvider.sendPasswordResetEmail(
+                            resetEmailController.text.trim(),
+                          );
+                          if (mounted) {
+                            Navigator.of(context).pop();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  success
+                                      ? 'Password reset link sent! Check your email.'
+                                      : authProvider.error ?? 'Failed to send reset email',
+                                ),
+                                backgroundColor: success ? Colors.green : Colors.red,
+                              ),
+                            );
+                            if (success) {
+                              authProvider.clearError();
+                            }
+                          }
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: authProvider.isLoading
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Text('Send Reset Link', style: TextStyle(color: Colors.white)),
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 }

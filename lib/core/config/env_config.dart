@@ -12,6 +12,10 @@ class EnvConfig {
   /// Ola Maps API key
   static String get olaMapsApiKey => dotenv.env['OLA_MAPS_API_KEY'] ?? '';
 
+  /// Google OAuth client IDs
+  static String get googleWebClientId => dotenv.env['GOOGLE_WEB_CLIENT_ID'] ?? '';
+  static String get googleIosClientId => dotenv.env['GOOGLE_IOS_CLIENT_ID'] ?? '';
+
   /// Load environment variables from .env file
   static Future<void> load() async {
     await dotenv.load(fileName: ".env");

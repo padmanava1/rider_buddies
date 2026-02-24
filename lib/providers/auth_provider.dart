@@ -2,9 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:io';
 import 'dart:convert';
 import '../core/services/supabase_service.dart';
+import '../core/config/env_config.dart';
 
 class AuthProvider extends ChangeNotifier {
   final SupabaseClient _supabase = SupabaseService.client;
@@ -105,6 +107,10 @@ class AuthProvider extends ChangeNotifier {
     return createUserWithEmailAndPassword(email, password, name, phone);
   }
 
+  // Track if email confirmation is needed
+  bool _needsEmailConfirmation = false;
+  bool get needsEmailConfirmation => _needsEmailConfirmation;
+
   Future<bool> createUserWithEmailAndPassword(
     String email,
     String password,
@@ -114,6 +120,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       _isLoading = true;
       _error = null;
+      _needsEmailConfirmation = false;
       notifyListeners();
 
       // Create auth user
@@ -125,6 +132,12 @@ class AuthProvider extends ChangeNotifier {
       if (authResponse.user == null) {
         _error = 'Failed to create user';
         return false;
+      }
+
+      // Check if email confirmation is required
+      // If session is null but user exists, email confirmation is needed
+      if (authResponse.session == null) {
+        _needsEmailConfirmation = true;
       }
 
       // Create user profile in database
@@ -166,6 +179,123 @@ class AuthProvider extends ChangeNotifier {
       _userId = null;
     } catch (e) {
       _error = 'Failed to sign out';
+      notifyListeners();
+    }
+  }
+
+  Future<bool> sendPasswordResetEmail(String email) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      await _supabase.auth.resetPasswordForEmail(email);
+      return true;
+    } on AuthException catch (e) {
+      _error = _getErrorMessage(e.message);
+      return false;
+    } catch (e) {
+      _error = 'Failed to send reset email. Please try again.';
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> resendConfirmationEmail(String email) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      await _supabase.auth.resend(type: OtpType.signup, email: email);
+      return true;
+    } on AuthException catch (e) {
+      _error = _getErrorMessage(e.message);
+      return false;
+    } catch (e) {
+      _error = 'Failed to resend confirmation email. Please try again.';
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> signInWithGoogle() async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      // Configure Google Sign In
+      final webClientId = EnvConfig.googleWebClientId;
+      final iosClientId = EnvConfig.googleIosClientId;
+
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        clientId: iosClientId.isNotEmpty ? iosClientId : null,
+        serverClientId: webClientId.isNotEmpty ? webClientId : null,
+      );
+
+      final googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        _error = null; // User cancelled
+        return false;
+      }
+
+      final googleAuth = await googleUser.authentication;
+      final accessToken = googleAuth.accessToken;
+      final idToken = googleAuth.idToken;
+
+      if (accessToken == null || idToken == null) {
+        _error = 'Failed to get Google credentials.';
+        return false;
+      }
+
+      // Sign in to Supabase with Google credentials
+      final response = await _supabase.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        accessToken: accessToken,
+      );
+
+      if (response.user == null) {
+        _error = 'Failed to sign in with Google.';
+        return false;
+      }
+
+      // Check if user profile exists, if not create one
+      final existingProfile = await _supabase
+          .from('users')
+          .select()
+          .eq('auth_id', response.user!.id)
+          .maybeSingle();
+
+      if (existingProfile == null) {
+        // Create user profile for new Google users
+        await _supabase.from('users').insert({
+          'auth_id': response.user!.id,
+          'name': googleUser.displayName ?? 'User',
+          'email': googleUser.email,
+          'phone': '',
+          'profile_image_url': googleUser.photoUrl,
+          'created_at': DateTime.now().toIso8601String(),
+          'last_active': DateTime.now().toIso8601String(),
+        });
+      }
+
+      return true;
+    } on AuthException catch (e) {
+      _error = _getErrorMessage(e.message);
+      debugPrint('Google Sign In Auth Error: ${e.message}');
+      return false;
+    } catch (e) {
+      _error = 'Failed to sign in with Google. Please try again.';
+      debugPrint('Google Sign In Error: $e');
+      return false;
+    } finally {
+      _isLoading = false;
       notifyListeners();
     }
   }

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rider Buddies - Email Verification</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+        }
+
+        .icon svg {
+            width: 40px;
+            height: 40px;
+            fill: white;
+        }
+
+        .spinner {
+            width: 80px;
+            height: 80px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 24px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 12px;
+        }
+
+        p {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+
+        .success {
+            color: #10b981;
+        }
+
+        .error {
+            color: #ef4444;
+        }
+
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 14px 32px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Loading State -->
+        <div id="loading">
+            <div class="spinner"></div>
+            <h1>Processing...</h1>
+            <p>Please wait while we verify your request.</p>
+        </div>
+
+        <!-- Email Confirmed State -->
+        <div id="email-confirmed" class="hidden">
+            <div class="icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                </svg>
+            </div>
+            <h1 class="success">Email Verified!</h1>
+            <p>Your email has been successfully verified. You can now sign in to your Rider Buddies account.</p>
+            <a href="#" class="button" onclick="openApp()">Open App</a>
+        </div>
+
+        <!-- Password Reset State -->
+        <div id="password-reset" class="hidden">
+            <div class="icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                </svg>
+            </div>
+            <h1>Reset Your Password</h1>
+            <p>Please open the Rider Buddies app to complete your password reset.</p>
+            <a href="#" class="button" onclick="openApp()">Open App</a>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="hidden">
+            <div class="icon" style="background: #ef4444;">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                </svg>
+            </div>
+            <h1 class="error">Something Went Wrong</h1>
+            <p id="error-message">We couldn't process your request. Please try again or contact support.</p>
+            <a href="#" class="button" onclick="openApp()">Open App</a>
+        </div>
+
+        <!-- Generic Welcome State -->
+        <div id="welcome" class="hidden">
+            <div class="icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M15.5 5H11l5 7-5 7h4.5l5-7z"/><path d="M8.5 5H4l5 7-5 7h4.5l5-7z"/>
+                </svg>
+            </div>
+            <h1>Rider Buddies</h1>
+            <p>Group cycling coordination and real-time location sharing for your riding crew.</p>
+            <a href="#" class="button" onclick="openApp()">Open App</a>
+        </div>
+    </div>
+
+    <script>
+        // App deep link scheme
+        const APP_SCHEME = 'riderbuddies';
+
+        function hideAll() {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('email-confirmed').classList.add('hidden');
+            document.getElementById('password-reset').classList.add('hidden');
+            document.getElementById('error').classList.add('hidden');
+            document.getElementById('welcome').classList.add('hidden');
+        }
+
+        function showSection(id) {
+            hideAll();
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function openApp() {
+            // Try to open the app with deep link
+            const currentUrl = window.location.href;
+            const deepLink = `${APP_SCHEME}://auth${window.location.search}${window.location.hash}`;
+
+            // Try to open the app
+            window.location.href = deepLink;
+
+            // Fallback: if app doesn't open, stay on this page
+            setTimeout(() => {
+                // App didn't open, maybe show app store links here
+                console.log('App may not be installed');
+            }, 2000);
+        }
+
+        function processAuth() {
+            const hash = window.location.hash;
+            const search = window.location.search;
+            const params = new URLSearchParams(hash.substring(1) || search.substring(1));
+
+            const type = params.get('type');
+            const accessToken = params.get('access_token');
+            const refreshToken = params.get('refresh_token');
+            const error = params.get('error');
+            const errorDescription = params.get('error_description');
+
+            // Small delay to show loading state
+            setTimeout(() => {
+                if (error) {
+                    document.getElementById('error-message').textContent =
+                        errorDescription || 'An error occurred during verification.';
+                    showSection('error');
+                    return;
+                }
+
+                if (type === 'signup' || type === 'email_confirmation' || type === 'email') {
+                    showSection('email-confirmed');
+                } else if (type === 'recovery' || type === 'password_recovery') {
+                    showSection('password-reset');
+                } else if (accessToken) {
+                    // Generic auth success
+                    showSection('email-confirmed');
+                } else {
+                    // No auth params, show welcome
+                    showSection('welcome');
+                }
+            }, 1000);
+        }
+
+        // Process on page load
+        processAuth();
+    </script>
+</body>
+</html>

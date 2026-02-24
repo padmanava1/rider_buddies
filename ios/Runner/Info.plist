@@ -51,5 +51,20 @@
 		<string>This app needs access to location to show your position on the map and provide compass direction for navigation.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 		<string>This app needs access to location to show your position on the map and provide compass direction for navigation.</string>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>com.riderbuddies.app</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>riderbuddies</string>
+				</array>
+			</dict>
+		</array>
+		<key>FlutterDeepLinkingEnabled</key>
+		<true/>
 	</dict>
 </plist>

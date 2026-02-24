@@ -439,6 +439,61 @@ class _SignupScreenState extends State<SignupScreen>
 
                             SizedBox(height: 20),
 
+                            // Divider with "or"
+                            Row(
+                              children: [
+                                Expanded(child: Divider(color: Colors.grey.shade300)),
+                                Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 16),
+                                  child: Text(
+                                    'or',
+                                    style: TextStyle(color: Colors.grey.shade500),
+                                  ),
+                                ),
+                                Expanded(child: Divider(color: Colors.grey.shade300)),
+                              ],
+                            ),
+
+                            SizedBox(height: 20),
+
+                            // Google Sign In Button
+                            Consumer<AuthProvider>(
+                              builder: (context, authProvider, child) {
+                                return SizedBox(
+                                  width: double.infinity,
+                                  height: 56,
+                                  child: OutlinedButton.icon(
+                                    onPressed: authProvider.isLoading
+                                        ? null
+                                        : _handleGoogleSignIn,
+                                    icon: Image.network(
+                                      'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                                      height: 24,
+                                      width: 24,
+                                      errorBuilder: (context, error, stackTrace) =>
+                                          Icon(Icons.g_mobiledata, size: 24),
+                                    ),
+                                    label: Text(
+                                      'Continue with Google',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                    ),
+                                    style: OutlinedButton.styleFrom(
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      side: BorderSide(color: Colors.grey.shade300),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+
+                            SizedBox(height: 20),
+
                             // Error Message
                             Consumer<AuthProvider>(
                               builder: (context, authProvider, child) {
@@ -517,11 +572,103 @@ class _SignupScreenState extends State<SignupScreen>
 
       if (success) {
         HapticService.success();
-        // Navigate to mode selection or main app
-        Navigator.pushReplacementNamed(context, '/mode-selection');
+        // Check if email confirmation is required
+        if (authProvider.needsEmailConfirmation) {
+          _showEmailConfirmationDialog();
+        } else {
+          // Navigate to mode selection or main app
+          Navigator.pushReplacementNamed(context, '/mode-selection');
+        }
       } else {
         HapticService.error();
       }
     }
+  }
+
+  void _handleGoogleSignIn() async {
+    HapticService.mediumImpact();
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final success = await authProvider.signInWithGoogle();
+
+    if (success && mounted) {
+      HapticService.success();
+      Navigator.pushReplacementNamed(context, '/mode-selection');
+    } else if (authProvider.error != null) {
+      HapticService.error();
+    }
+  }
+
+  void _showEmailConfirmationDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.mark_email_read, color: AppColors.primary),
+            SizedBox(width: 12),
+            Text('Verify Your Email'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'We\'ve sent a confirmation link to:',
+              style: TextStyle(fontSize: 14),
+            ),
+            SizedBox(height: 8),
+            Text(
+              _emailController.text.trim(),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Please check your inbox and click the link to verify your email before logging in.',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final authProvider = Provider.of<AuthProvider>(context, listen: false);
+              final sent = await authProvider.resendConfirmationEmail(
+                _emailController.text.trim(),
+              );
+              if (sent && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Confirmation email resent!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            child: Text('Resend Email'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).pop(); // Go back to login screen
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: Text('Go to Login', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 }
